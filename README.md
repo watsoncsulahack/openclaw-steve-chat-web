@@ -40,20 +40,31 @@ UI Demo mode is default so UX flow can be reviewed without model runtime depende
 
 ## Local llama.cpp quick start
 
-This repo includes a helper script to run **official `llama-server`** on `127.0.0.1:18080` (the default Steve Chat runtime endpoint):
+This repo includes a helper script to run either backend:
+
+- **regular `llama-server`** on `127.0.0.1:18080`
+- **qvac fabric llama-server** on `127.0.0.1:18081` (when qvac binary is available)
 
 ```bash
 ./scripts/llama_cpp_local.sh list-models
-./scripts/llama_cpp_local.sh start --index 1
+./scripts/llama_cpp_local.sh start --backend regular --index 1
 ```
 
 Switch model (example E2B → E4B):
 
 ```bash
-./scripts/llama_cpp_local.sh restart --index 2
+./scripts/llama_cpp_local.sh restart --backend regular --index 2
 ```
 
-Then in Steve Chat Settings, tap **Connect local llama.cpp** to set endpoint + detect models.
+Start qvac backend (if qvac binary is installed):
+
+```bash
+./scripts/llama_cpp_local.sh start --backend qvac --index 1
+```
+
+Then in Steve Chat Settings:
+1. choose backend (Regular or QVAC)
+2. tap **Connect local …** to set endpoint + detect models.
 
 Detailed guide: `docs/PHASE2-LLAMA-CPP-SETUP.md`
 

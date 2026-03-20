@@ -1,15 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BIN="${LLAMA_CPP_BIN:-$(command -v llama-server || true)}"
 HOST="${LLAMA_CPP_HOST:-127.0.0.1}"
-PORT="${LLAMA_CPP_PORT:-18080}"
 CTX_SIZE="${LLAMA_CPP_CTX:-4096}"
 THREADS="${LLAMA_CPP_THREADS:-$(nproc)}"
 RUN_DIR="${LLAMA_CPP_RUN_DIR:-/tmp/openclaw-steve-chat-llama}"
-PID_FILE="$RUN_DIR/llama-server-$PORT.pid"
-LOG_FILE="$RUN_DIR/llama-server-$PORT.log"
-MODEL_FILE="$RUN_DIR/model-$PORT.path"
 
 SEARCH_DIRS=(
   "/storage/emulated/0/OpenClawHub/models"
@@ -17,12 +12,100 @@ SEARCH_DIRS=(
   "/root/.openclaw/workspace"
 )
 
+ACTION="${1:-}"; shift || true
+BACKEND="${LLAMA_BACKEND:-regular}"
+MODEL_PATH=""
+MODEL_INDEX=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --backend)
+      BACKEND="${2:-}"
+      shift 2
+      ;;
+    --model)
+      MODEL_PATH="${2:-}"
+      shift 2
+      ;;
+    --index)
+      MODEL_INDEX="${2:-}"
+      shift 2
+      ;;
+    *)
+      echo "Unknown arg: $1" >&2
+      ACTION="help"
+      break
+      ;;
+  esac
+done
+
+case "$BACKEND" in
+  regular)
+    BIN="${LLAMA_CPP_BIN:-$(command -v llama-server || true)}"
+    PORT="${LLAMA_CPP_PORT:-18080}"
+    BACKEND_LABEL="regular"
+    ;;
+  qvac)
+    BIN="${QVAC_LLAMA_BIN:-$(command -v qvac-llama-server || command -v qvac-fabric-llama-server || command -v fabric-llama-server || true)}"
+    PORT="${QVAC_LLAMA_PORT:-18081}"
+    BACKEND_LABEL="qvac"
+    ;;
+  *)
+    echo "[llama-cpp] ERROR: unknown backend '$BACKEND' (expected regular|qvac)" >&2
+    exit 1
+    ;;
+esac
+
+PID_FILE="$RUN_DIR/${BACKEND_LABEL}-llama-server-$PORT.pid"
+LOG_FILE="$RUN_DIR/${BACKEND_LABEL}-llama-server-$PORT.log"
+MODEL_FILE="$RUN_DIR/${BACKEND_LABEL}-model-$PORT.path"
+LEGACY_PID_FILE=""
+LEGACY_MODEL_FILE=""
+
+if [[ "$BACKEND_LABEL" == "regular" ]]; then
+  LEGACY_PID_FILE="$RUN_DIR/llama-server-$PORT.pid"
+  LEGACY_MODEL_FILE="$RUN_DIR/model-$PORT.path"
+fi
+
 mkdir -p "$RUN_DIR"
+
+usage() {
+  cat <<EOF
+Usage:
+  $(basename "$0") <action> [--backend regular|qvac] [--model /path/model.gguf] [--index N]
+
+Actions:
+  list-models
+  status
+  stop
+  start
+  restart
+
+Backend defaults:
+  regular -> llama-server on port 18080
+  qvac    -> qvac/fabric llama server on port 18081
+
+Env overrides:
+  LLAMA_CPP_BIN, LLAMA_CPP_PORT
+  QVAC_LLAMA_BIN, QVAC_LLAMA_PORT
+  LLAMA_CPP_HOST, LLAMA_CPP_CTX, LLAMA_CPP_THREADS
+
+Examples:
+  $(basename "$0") list-models
+  $(basename "$0") start --backend regular --index 1
+  $(basename "$0") restart --backend qvac --index 2
+EOF
+}
 
 require_bin() {
   if [[ -z "$BIN" || ! -x "$BIN" ]]; then
-    echo "[llama-cpp] ERROR: llama-server binary not found." >&2
-    echo "Install from https://github.com/ggml-org/llama.cpp or set LLAMA_CPP_BIN." >&2
+    if [[ "$BACKEND" == "qvac" ]]; then
+      echo "[llama-cpp] ERROR: qvac backend binary not found." >&2
+      echo "Set QVAC_LLAMA_BIN to your qvac fabric llama-server binary path." >&2
+    else
+      echo "[llama-cpp] ERROR: regular llama-server binary not found." >&2
+      echo "Install from https://github.com/ggml-org/llama.cpp or set LLAMA_CPP_BIN." >&2
+    fi
     exit 1
   fi
 }
@@ -98,33 +181,71 @@ pick_model() {
   echo "${models[0]}"
 }
 
+find_pid_by_port() {
+  ss -ltnp "sport = :$PORT" 2>/dev/null | awk -F'pid=' '/pid=/{split($2,a,","); print a[1]; exit}'
+}
+
 is_running() {
-  [[ -f "$PID_FILE" ]] || return 1
   local pid
-  pid="$(cat "$PID_FILE")"
-  [[ -n "$pid" ]] || return 1
-  kill -0 "$pid" 2>/dev/null
+
+  if [[ -f "$PID_FILE" ]]; then
+    pid="$(cat "$PID_FILE" 2>/dev/null || true)"
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      return 0
+    fi
+  fi
+
+  if [[ -n "$LEGACY_PID_FILE" && -f "$LEGACY_PID_FILE" ]]; then
+    pid="$(cat "$LEGACY_PID_FILE" 2>/dev/null || true)"
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      return 0
+    fi
+  fi
+
+  local pid_by_port
+  pid_by_port="$(find_pid_by_port || true)"
+  [[ -n "$pid_by_port" ]]
 }
 
 status() {
-  if is_running; then
-    local pid model
-    pid="$(cat "$PID_FILE")"
+  local pid model source="pid-file"
+
+  if [[ -f "$PID_FILE" ]]; then
+    pid="$(cat "$PID_FILE" || true)"
+  fi
+
+  if [[ -z "${pid:-}" ]] || ! kill -0 "$pid" 2>/dev/null; then
+    if [[ -n "$LEGACY_PID_FILE" && -f "$LEGACY_PID_FILE" ]]; then
+      pid="$(cat "$LEGACY_PID_FILE" || true)"
+      source="legacy-pid-file"
+    fi
+  fi
+
+  if [[ -z "${pid:-}" ]] || ! kill -0 "$pid" 2>/dev/null; then
+    pid="$(find_pid_by_port || true)"
+    source="port-scan"
+  fi
+
+  if [[ -n "${pid:-}" ]]; then
     model="$(cat "$MODEL_FILE" 2>/dev/null || true)"
+    if [[ -z "$model" && -n "$LEGACY_MODEL_FILE" ]]; then
+      model="$(cat "$LEGACY_MODEL_FILE" 2>/dev/null || true)"
+    fi
     echo "[llama-cpp] running"
-    echo "  pid:   $pid"
-    echo "  host:  $HOST"
-    echo "  port:  $PORT"
-    [[ -n "$model" ]] && echo "  model: $model"
-    echo "  log:   $LOG_FILE"
+    echo "  backend: $BACKEND_LABEL"
+    echo "  pid:     $pid ($source)"
+    echo "  host:    $HOST"
+    echo "  port:    $PORT"
+    [[ -n "$model" ]] && echo "  model:   $model"
+    echo "  log:     $LOG_FILE"
   else
-    echo "[llama-cpp] stopped"
+    echo "[llama-cpp] stopped ($BACKEND_LABEL)"
     return 1
   fi
 }
 
 wait_ready() {
-  local tries=60
+  local tries=90
   local url="http://$HOST:$PORT/v1/models"
   while (( tries > 0 )); do
     if curl -fsS "$url" >/dev/null 2>&1; then
@@ -138,20 +259,25 @@ wait_ready() {
 
 start() {
   require_bin
-
   local model_path="$1"
 
   if is_running; then
-    echo "[llama-cpp] already running (pid $(cat "$PID_FILE")); stopping first..."
+    local existing_pid
+    existing_pid="$(cat "$PID_FILE" 2>/dev/null || find_pid_by_port || true)"
+    echo "[llama-cpp] already running (backend=$BACKEND_LABEL pid ${existing_pid:-unknown}); stopping first..."
     stop
   fi
 
   echo "$model_path" > "$MODEL_FILE"
-  echo "[llama-cpp] starting llama-server"
-  echo "  bin:   $BIN"
-  echo "  host:  $HOST"
-  echo "  port:  $PORT"
-  echo "  model: $model_path"
+  if [[ -n "$LEGACY_MODEL_FILE" ]]; then
+    echo "$model_path" > "$LEGACY_MODEL_FILE"
+  fi
+  echo "[llama-cpp] starting server"
+  echo "  backend: $BACKEND_LABEL"
+  echo "  bin:     $BIN"
+  echo "  host:    $HOST"
+  echo "  port:    $PORT"
+  echo "  model:   $model_path"
 
   nohup "$BIN" \
     --host "$HOST" \
@@ -164,9 +290,12 @@ start() {
 
   local pid=$!
   echo "$pid" > "$PID_FILE"
+  if [[ -n "$LEGACY_PID_FILE" ]]; then
+    echo "$pid" > "$LEGACY_PID_FILE"
+  fi
 
   if wait_ready; then
-    echo "[llama-cpp] ready at http://$HOST:$PORT"
+    echo "[llama-cpp] ready at http://$HOST:$PORT ($BACKEND_LABEL)"
     curl -fsS "http://$HOST:$PORT/v1/models" | sed -n '1,80p'
   else
     echo "[llama-cpp] ERROR: server did not become ready. See $LOG_FILE" >&2
@@ -177,14 +306,27 @@ start() {
 
 stop() {
   if ! is_running; then
-    echo "[llama-cpp] already stopped"
+    echo "[llama-cpp] already stopped ($BACKEND_LABEL)"
     rm -f "$PID_FILE"
+    if [[ -n "$LEGACY_PID_FILE" ]]; then
+      rm -f "$LEGACY_PID_FILE"
+    fi
     return 0
   fi
 
   local pid
-  pid="$(cat "$PID_FILE")"
-  echo "[llama-cpp] stopping pid $pid"
+  pid="$(cat "$PID_FILE" 2>/dev/null || true)"
+  if [[ -z "$pid" ]]; then
+    pid="$(find_pid_by_port || true)"
+  fi
+
+  if [[ -z "$pid" ]]; then
+    echo "[llama-cpp] could not resolve pid for backend=$BACKEND_LABEL (port $PORT)"
+    rm -f "$PID_FILE"
+    return 1
+  fi
+
+  echo "[llama-cpp] stopping backend=$BACKEND_LABEL pid $pid"
   kill "$pid" 2>/dev/null || true
 
   for _ in {1..20}; do
@@ -200,45 +342,10 @@ stop() {
   fi
 
   rm -f "$PID_FILE"
+  if [[ -n "$LEGACY_PID_FILE" ]]; then
+    rm -f "$LEGACY_PID_FILE"
+  fi
 }
-
-usage() {
-  cat <<EOF
-Usage:
-  $(basename "$0") list-models
-  $(basename "$0") status
-  $(basename "$0") stop
-  $(basename "$0") start [--model /path/to/model.gguf] [--index N]
-  $(basename "$0") restart [--model /path/to/model.gguf] [--index N]
-
-Notes:
-  - Defaults to llama-server discovered on PATH.
-  - Defaults to port 18080 (same as Steve Chat local runtime default).
-  - Model auto-picks first Gemma GGUF if no --model/--index is supplied.
-EOF
-}
-
-ACTION="${1:-}"; shift || true
-MODEL_PATH=""
-MODEL_INDEX=""
-
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --model)
-      MODEL_PATH="${2:-}"
-      shift 2
-      ;;
-    --index)
-      MODEL_INDEX="${2:-}"
-      shift 2
-      ;;
-    *)
-      echo "Unknown arg: $1" >&2
-      usage
-      exit 1
-      ;;
-  esac
-done
 
 case "$ACTION" in
   list-models)
@@ -257,7 +364,11 @@ case "$ACTION" in
     stop
     start "$(pick_model "$MODEL_PATH" "$MODEL_INDEX")"
     ;;
+  help|""|-h|--help)
+    usage
+    ;;
   *)
+    echo "Unknown action: $ACTION" >&2
     usage
     exit 1
     ;;
