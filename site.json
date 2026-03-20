@@ -1,0 +1,9 @@
+{
+  "id": "steve-chat",
+  "name": "Steve Chat",
+  "path": "/root/.openclaw/workspace/openclaw-steve-chat-web",
+  "port": 8104,
+  "startCommand": "bash serve.sh 8104",
+  "stopCommand": "pkill -f '[h]ttp.server 8104|[s]erve.sh 8104' || true",
+  "healthPath": "/"
+}
