@@ -204,6 +204,30 @@ body { min-height: 100dvh; }
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
+}
+
+#drawerCompactBtn {
+  display: none;
+}
+
+.sidebar-rail {
+  display: none;
+}
+
+.rail-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  border: 1px solid #2a345f;
+  background: #151f44;
+  color: #eef2ff;
+  font-weight: 700;
+}
+
+.rail-btn.active {
+  border-color: #5d78ff;
+  background: #223886;
 }
 
 .drawer-section {
@@ -361,6 +385,10 @@ input[type="text"] {
     background: #0a0f1f;
   }
 
+  .app-shell.sidebar-collapsed {
+    grid-template-columns: 74px 1fr;
+  }
+
   .drawer {
     position: relative;
     inset: auto;
@@ -379,6 +407,12 @@ input[type="text"] {
 
   #closeDrawerBtn {
     display: none;
+  }
+
+  #drawerCompactBtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   #menuBtn {
@@ -403,5 +437,30 @@ input[type="text"] {
 
   .composer {
     padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  }
+
+  .app-shell.sidebar-collapsed .drawer {
+    padding: calc(8px + env(safe-area-inset-top)) 8px 8px;
+  }
+
+  .app-shell.sidebar-collapsed .drawer-header h2,
+  .app-shell.sidebar-collapsed .drawer-section {
+    display: none;
+  }
+
+  .app-shell.sidebar-collapsed .drawer-header {
+    justify-content: center;
+  }
+
+  .app-shell.sidebar-collapsed #drawerCompactBtn {
+    width: 42px;
+  }
+
+  .app-shell.sidebar-collapsed .sidebar-rail {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+    margin-top: 8px;
   }
 }

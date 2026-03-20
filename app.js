@@ -1,6 +1,7 @@
 const state = {
   baseUrl: localStorage.getItem("steve.baseUrl") || "http://127.0.0.1:18080",
   liveMode: localStorage.getItem("steve.liveMode") === "1",
+  sidebarCollapsed: localStorage.getItem("steve.sidebarCollapsed") === "1",
   mockMicOn: false,
   activeChatId: "steve",
   selectedModel: localStorage.getItem("steve.model") || "gemma-3n-e4b",
@@ -31,12 +32,15 @@ const $ = (id) => document.getElementById(id);
 const WIDE_QUERY = "(min-width: 700px)";
 
 const els = {
+  appShell: document.querySelector(".app-shell"),
   drawer: $("drawer"),
   backdrop: $("backdrop"),
   messages: $("messages"),
   chatList: $("chatList"),
   chatSearchInput: $("chatSearchInput"),
   newChatBtn: $("newChatBtn"),
+  drawerCompactBtn: $("drawerCompactBtn"),
+  sidebarRail: $("sidebarRail"),
   modelList: $("modelList"),
   modelSheet: $("modelSheet"),
   currentModelLabel: $("currentModelLabel"),
@@ -78,6 +82,7 @@ function bindEvents() {
   });
 
   els.newChatBtn.addEventListener("click", createNewChat);
+  els.drawerCompactBtn.addEventListener("click", toggleSidebarCollapsed);
 
   els.mockModeBtn.addEventListener("click", () => setMode(false));
   els.runtimeModeBtn.addEventListener("click", () => setMode(true));
@@ -108,6 +113,26 @@ function bindViewportFixes() {
   }
 }
 
+function isWide() {
+  return window.matchMedia(WIDE_QUERY).matches;
+}
+
+function applySidebarLayoutState() {
+  const wide = isWide();
+  const collapsed = wide && state.sidebarCollapsed;
+  els.appShell.classList.toggle("sidebar-collapsed", collapsed);
+  els.drawerCompactBtn.textContent = collapsed ? "▸" : "◧";
+  els.drawerCompactBtn.title = collapsed ? "Expand sidebar" : "Collapse to sidebar";
+}
+
+function toggleSidebarCollapsed() {
+  if (!isWide()) return;
+  state.sidebarCollapsed = !state.sidebarCollapsed;
+  localStorage.setItem("steve.sidebarCollapsed", state.sidebarCollapsed ? "1" : "0");
+  applySidebarLayoutState();
+  renderSidebarRail();
+}
+
 function syncViewport() {
   const vv = window.visualViewport;
   const height = vv ? vv.height : window.innerHeight;
@@ -116,9 +141,10 @@ function syncViewport() {
   document.documentElement.style.setProperty("--app-height", `${Math.round(height)}px`);
   document.documentElement.style.setProperty("--vv-top", `${Math.round(top)}px`);
 
-  if (window.matchMedia(WIDE_QUERY).matches) {
+  if (isWide()) {
     els.drawer.classList.add("open");
   }
+  applySidebarLayoutState();
   syncBackdrop();
 }
 
@@ -127,7 +153,7 @@ function ensureComposerVisible() {
 }
 
 function toggleDrawer(open) {
-  const wide = window.matchMedia(WIDE_QUERY).matches;
+  const wide = isWide();
   if (wide) {
     els.drawer.classList.add("open");
   } else {
@@ -142,13 +168,15 @@ function toggleModelSheet(open) {
 }
 
 function syncBackdrop() {
-  const wide = window.matchMedia(WIDE_QUERY).matches;
+  const wide = isWide();
   const show = !wide && (els.drawer.classList.contains("open") || els.modelSheet.classList.contains("show"));
   els.backdrop.classList.toggle("show", show);
 }
 
 function renderAll() {
+  applySidebarLayoutState();
   renderChats();
+  renderSidebarRail();
   renderMessages();
   renderModels();
   syncModelLabel();
@@ -160,11 +188,41 @@ function createNewChat() {
   const title = `New chat ${state.chats.length - 1}`;
   state.chats.unshift({ id, title, subtitle: "Just now" });
   state.messages[id] = [{ role: "steve", text: "New thread ready." }];
-  state.activeChatId = id;
+  switchChat(id);
   state.chatFilter = "";
   if (els.chatSearchInput) els.chatSearchInput.value = "";
   renderChats();
+  renderSidebarRail();
   renderMessages();
+}
+
+function switchChat(chatId) {
+  state.activeChatId = chatId;
+  renderChats();
+  renderSidebarRail();
+  renderMessages();
+  toggleDrawer(false);
+}
+
+function renderSidebarRail() {
+  if (!els.sidebarRail) return;
+  els.sidebarRail.innerHTML = "";
+
+  const newBtn = document.createElement("button");
+  newBtn.className = "rail-btn";
+  newBtn.textContent = "+";
+  newBtn.title = "New chat";
+  newBtn.addEventListener("click", createNewChat);
+  els.sidebarRail.appendChild(newBtn);
+
+  state.chats.slice(0, 8).forEach((chat) => {
+    const b = document.createElement("button");
+    b.className = `rail-btn ${chat.id === state.activeChatId ? "active" : ""}`;
+    b.title = chat.title;
+    b.textContent = (chat.title || "?").trim().slice(0, 1).toUpperCase();
+    b.addEventListener("click", () => switchChat(chat.id));
+    els.sidebarRail.appendChild(b);
+  });
 }
 
 function renderChats() {
@@ -185,12 +243,7 @@ function renderChats() {
     const div = document.createElement("div");
     div.className = `chat-item ${chat.id === state.activeChatId ? "active" : ""}`;
     div.innerHTML = `<strong>${chat.title}</strong><br /><small>${chat.subtitle}</small>`;
-    div.addEventListener("click", () => {
-      state.activeChatId = chat.id;
-      renderChats();
-      renderMessages();
-      toggleDrawer(false);
-    });
+    div.addEventListener("click", () => switchChat(chat.id));
     els.chatList.appendChild(div);
   });
 }
