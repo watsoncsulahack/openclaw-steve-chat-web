@@ -119,7 +119,7 @@ function bindEvents() {
   });
 
   $("plusBtn").addEventListener("click", () => {
-    alert("Hook for attachment/actions menu.");
+    els.modeHint.textContent = "Attachment/actions menu hook (non-modal).";
   });
 
   els.micBtn.addEventListener("click", toggleMockMic);
@@ -252,7 +252,7 @@ function renderArchiveState() {
   els.archivesBtn.setAttribute("aria-pressed", String(state.showArchived));
   els.archivesBtn.title = state.showArchived ? "Showing archived chats (tap to return)" : "Show archived chats";
   if (els.chatListTitle) {
-    els.chatListTitle.textContent = state.showArchived ? "Archived (tap 🗃 to return)" : "All chats";
+    els.chatListTitle.textContent = state.showArchived ? "Archived (tap archive icon to return)" : "All chats";
   }
 }
 
@@ -408,7 +408,7 @@ function renderChats() {
 
     const cueRight = document.createElement("div");
     cueRight.className = "swipe-cue swipe-cue-right";
-    cueRight.textContent = "↳ Archive";
+    cueRight.innerHTML = `${ARCHIVE_ICON_SVG}<span>Archive</span>`;
 
     const cueLeft = document.createElement("div");
     cueLeft.className = "swipe-cue swipe-cue-left";
@@ -421,12 +421,15 @@ function renderChats() {
     bindSwipeAction(div, {
       onLeft: () => deleteChat(chat.id),
       onRight: () => toggleArchiveChat(chat.id),
+      onTap: () => switchChat(chat.id),
       previewClassRight: "swipe-preview-right",
       previewClassLeft: "swipe-preview-left",
-      threshold: 96,
+      threshold: 92,
+      transformEl: row,
+      maxTranslate: 74,
     });
 
-    div.addEventListener("click", () => switchChat(chat.id));
+    div.addEventListener("contextmenu", (e) => e.preventDefault());
 
     els.chatList.appendChild(div);
   });
@@ -435,9 +438,12 @@ function renderChats() {
 function bindSwipeAction(el, {
   onLeft,
   onRight,
+  onTap,
   threshold = 72,
   previewClassRight,
   previewClassLeft,
+  transformEl = null,
+  maxTranslate = 108,
 }) {
   let sx = 0;
   let sy = 0;
@@ -446,10 +452,12 @@ function bindSwipeAction(el, {
   let active = false;
   let dragAxis = "none";
 
+  const moveTarget = transformEl || el;
+
   const resetVisual = () => {
-    el.style.transition = "transform 140ms ease, opacity 140ms ease";
-    el.style.transform = "translateX(0)";
-    el.style.opacity = "1";
+    moveTarget.style.transition = "transform 140ms ease, opacity 140ms ease";
+    moveTarget.style.transform = "translateX(0)";
+    moveTarget.style.opacity = "1";
     if (previewClassRight) el.classList.remove(previewClassRight);
     if (previewClassLeft) el.classList.remove(previewClassLeft);
   };
@@ -462,7 +470,7 @@ function bindSwipeAction(el, {
     sy = e.clientY;
     dx = 0;
     dy = 0;
-    el.style.transition = "none";
+    moveTarget.style.transition = "none";
   };
 
   const move = (e) => {
@@ -484,9 +492,9 @@ function bindSwipeAction(el, {
 
     if (dragAxis !== "x") return;
 
-    const clamped = Math.max(-108, Math.min(108, dx));
-    el.style.transform = `translateX(${clamped}px)`;
-    el.style.opacity = "0.92";
+    const clamped = Math.max(-maxTranslate, Math.min(maxTranslate, dx));
+    moveTarget.style.transform = `translateX(${clamped}px)`;
+    moveTarget.style.opacity = "0.94";
 
     if (previewClassRight || previewClassLeft) {
       const dir = clamped > 26 ? "right" : clamped < -26 ? "left" : "none";
@@ -499,7 +507,9 @@ function bindSwipeAction(el, {
     if (!active && dragAxis === "none") return;
 
     const finalDx = dx;
+    const finalDy = dy;
     const horizontalDrag = dragAxis === "x";
+    const wasTap = dragAxis === "none" && Math.abs(finalDx) < 10 && Math.abs(finalDy) < 10;
 
     active = false;
     dragAxis = "none";
@@ -510,7 +520,14 @@ function bindSwipeAction(el, {
 
     resetVisual();
 
-    if (!shouldTrigger || !horizontalDrag) return;
+    if (!shouldTrigger) return;
+
+    if (wasTap) {
+      onTap?.();
+      return;
+    }
+
+    if (!horizontalDrag) return;
     if (Math.abs(finalDx) < threshold) return;
 
     if (finalDx > 0) onRight?.();
@@ -602,12 +619,21 @@ function renderMessages() {
     body.textContent = msg.text;
     bubble.appendChild(body);
 
-    if (msg.role === "steve" && msg.tps != null) {
+    if (msg.role === "steve" && (msg.tps != null || msg.energyMw != null)) {
       const meta = document.createElement("div");
       meta.className = "msg-tps";
-      const n = Number(msg.tps);
-      const fixed = Number.isFinite(n) ? (n >= 10 ? n.toFixed(0) : n.toFixed(1)) : "--";
-      meta.textContent = `${msg.tpsMode || "TPS"} ${fixed}`;
+
+      const bits = [];
+      if (msg.tps != null) {
+        const n = Number(msg.tps);
+        const fixed = Number.isFinite(n) ? (n >= 10 ? n.toFixed(0) : n.toFixed(1)) : "--";
+        bits.push(`${msg.tpsMode || "TPS"} ${fixed}`);
+      }
+      if (msg.energyMw != null) {
+        bits.push(`Energy ${formatEnergy(msg.energyMw)}`);
+      }
+
+      meta.textContent = bits.join(" • ");
       bubble.appendChild(meta);
     }
 
@@ -623,6 +649,7 @@ function renderMessages() {
       onRight: () => setReplyTarget(idx, msg),
       threshold: 88,
       previewClassRight: "swipe-preview-right",
+      maxTranslate: 92,
     });
 
     els.messages.appendChild(row);
@@ -792,6 +819,24 @@ function shortName(full) {
   return cleaned.replace(/\.gguf$/i, "");
 }
 
+function formatEnergy(milliwatts) {
+  const n = Number(milliwatts);
+  if (!Number.isFinite(n)) return "--";
+  if (n >= 1000) {
+    const w = n / 1000;
+    return `${w >= 10 ? w.toFixed(1) : w.toFixed(2)} W`;
+  }
+  return `${Math.max(1, Math.round(n))} mW`;
+}
+
+function estimateDummyEnergyMw({ text, tps = null, live = false }) {
+  const base = live ? 720 : 540;
+  const textCost = Math.min(420, (text?.length || 0) * 5.3);
+  const tpsCost = Number.isFinite(Number(tps)) ? Number(tps) * 28 : 180;
+  const noise = Math.random() * 160;
+  return base + textCost + tpsCost + noise;
+}
+
 function appendMessage(role, text, options = {}) {
   if (!state.messages[state.activeChatId]) {
     state.messages[state.activeChatId] = [];
@@ -848,7 +893,11 @@ async function onSend() {
   const simTps = 9 + Math.random() * 22;
 
   window.setTimeout(() => {
-    appendMessage("steve", mockReplyForChat(state.activeChatId, text), { tps: simTps, tpsMode: "SIM TPS" });
+    appendMessage("steve", mockReplyForChat(state.activeChatId, text), {
+      tps: simTps,
+      tpsMode: "SIM TPS",
+      energyMw: estimateDummyEnergyMw({ text, tps: simTps, live: false }),
+    });
   }, delayMs);
 }
 
@@ -869,11 +918,19 @@ async function sendLive(text) {
     const data = await res.json();
     const reply = data?.choices?.[0]?.message?.content?.trim() || "(empty reply)";
     const tps = data?.timings?.predicted_per_second ?? data?.usage?.tokens_per_second ?? null;
-    appendMessage("steve", reply, { tps, tpsMode: "LIVE TPS" });
+    appendMessage("steve", reply, {
+      tps,
+      tpsMode: "LIVE TPS",
+      energyMw: estimateDummyEnergyMw({ text, tps, live: true }),
+    });
   } catch (err) {
     const simTps = 8 + Math.random() * 20;
     appendMessage("steve", `Live call failed: ${err.message}`);
-    appendMessage("steve", `[Simulated fallback] ${mockReplyForChat(state.activeChatId, text)}`, { tps: simTps, tpsMode: "SIM TPS" });
+    appendMessage("steve", `[Simulated fallback] ${mockReplyForChat(state.activeChatId, text)}`, {
+      tps: simTps,
+      tpsMode: "SIM TPS",
+      energyMw: estimateDummyEnergyMw({ text, tps: simTps, live: false }),
+    });
   }
 }
 
