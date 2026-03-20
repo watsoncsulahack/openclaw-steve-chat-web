@@ -218,6 +218,12 @@ body { min-height: 100dvh; }
   pointer-events: auto;
 }
 
+.backdrop.settings-dim {
+  background: rgba(3, 8, 22, 0.68);
+  backdrop-filter: blur(2px);
+  z-index: 70;
+}
+
 .drawer-header {
   display: flex;
   justify-content: space-between;
@@ -373,6 +379,7 @@ input[type="text"] {
   color: white;
   min-height: 38px;
   padding: 0 10px;
+  font-size: 16px;
 }
 
 .drawer-row {
@@ -424,6 +431,28 @@ input[type="text"] {
 }
 
 .model-sheet.show { transform: translateY(0); }
+
+.settings-modal {
+  inset: 0;
+  transform: none;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 72;
+  padding: 18px;
+  transition: opacity 160ms ease;
+}
+
+.settings-modal.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.settings-modal .model-sheet-card {
+  width: min(92vw, 640px);
+  max-height: min(78vh, 620px);
+}
 
 .model-sheet-card {
   max-width: 420px;
@@ -496,10 +525,6 @@ input[type="text"] {
     padding-top: calc(8px + env(safe-area-inset-top));
   }
 
-  .backdrop {
-    display: none !important;
-  }
-
   #closeDrawerBtn {
     display: none;
   }
@@ -555,6 +580,7 @@ input[type="text"] {
     width: 48px;
     min-width: 48px;
     height: 48px;
+    font-size: 34px;
   }
 
   .app-shell.sidebar-collapsed .sidebar-rail {

@@ -194,12 +194,13 @@ function toggleSettingsSheet(open) {
 
 function syncBackdrop() {
   const wide = isWide();
-  const show = !wide && (
+  const settingsOpen = els.settingsSheet.classList.contains("show");
+  const show = settingsOpen || (!wide && (
     els.drawer.classList.contains("open") ||
-    els.modelSheet.classList.contains("show") ||
-    els.settingsSheet.classList.contains("show")
-  );
+    els.modelSheet.classList.contains("show")
+  ));
   els.backdrop.classList.toggle("show", show);
+  els.backdrop.classList.toggle("settings-dim", settingsOpen);
 }
 
 function renderAll() {
@@ -586,8 +587,10 @@ async function sendLive(text) {
     appendMessage("steve", reply);
     setTps(tps, true);
   } catch (err) {
+    const simTps = 8 + Math.random() * 20;
     appendMessage("steve", `Live call failed: ${err.message}`);
-    setTps(null);
+    appendMessage("steve", `[Simulated fallback] ${mockReplyForChat(state.activeChatId, text)}`);
+    setTps(simTps, false);
   }
 }
 
