@@ -113,6 +113,11 @@
             <button id="mockModeBtn" class="secondary mode-btn active">UI Demo</button>
             <button id="runtimeModeBtn" class="secondary mode-btn">Local Runtime</button>
           </div>
+          <div class="toggle-row">
+            <label><input id="streamModeToggle" type="checkbox" checked /> Stream live responses</label>
+            <label><input id="ttsToggle" type="checkbox" /> Speak assistant replies</label>
+          </div>
+          <p id="runtimeStatus" class="hint">Runtime: idle.</p>
           <p id="modeHint" class="hint">UI Demo mode uses mock Steve replies for flow testing.</p>
         </div>
       </div>

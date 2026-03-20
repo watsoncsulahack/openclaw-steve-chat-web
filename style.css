@@ -203,6 +203,14 @@ body.theme-light {
   color: var(--text-strong);
 }
 
+.bubble.pending {
+  opacity: 0.9;
+}
+
+.bubble.error {
+  border-color: #b65464;
+}
+
 .bubble-reply {
   font-size: 12px;
   color: #c6d4ff;
@@ -584,6 +592,25 @@ input[type="text"] {
   grid-template-columns: 1fr 1fr;
   gap: 8px;
   margin-top: 8px;
+}
+
+.toggle-row {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  color: var(--text-strong);
+  font-size: 14px;
+}
+
+.toggle-row label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toggle-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
 }
 
 .mode-btn.active {
