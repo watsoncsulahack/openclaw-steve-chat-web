@@ -28,6 +28,8 @@ const state = {
 };
 
 const $ = (id) => document.getElementById(id);
+const WIDE_QUERY = "(min-width: 700px)";
+
 const els = {
   drawer: $("drawer"),
   backdrop: $("backdrop"),
@@ -114,7 +116,7 @@ function syncViewport() {
   document.documentElement.style.setProperty("--app-height", `${Math.round(height)}px`);
   document.documentElement.style.setProperty("--vv-top", `${Math.round(top)}px`);
 
-  if (window.matchMedia("(min-width: 860px)").matches) {
+  if (window.matchMedia(WIDE_QUERY).matches) {
     els.drawer.classList.add("open");
   }
   syncBackdrop();
@@ -125,7 +127,7 @@ function ensureComposerVisible() {
 }
 
 function toggleDrawer(open) {
-  const wide = window.matchMedia("(min-width: 860px)").matches;
+  const wide = window.matchMedia(WIDE_QUERY).matches;
   if (wide) {
     els.drawer.classList.add("open");
   } else {
@@ -140,7 +142,7 @@ function toggleModelSheet(open) {
 }
 
 function syncBackdrop() {
-  const wide = window.matchMedia("(min-width: 860px)").matches;
+  const wide = window.matchMedia(WIDE_QUERY).matches;
   const show = !wide && (els.drawer.classList.contains("open") || els.modelSheet.classList.contains("show"));
   els.backdrop.classList.toggle("show", show);
 }

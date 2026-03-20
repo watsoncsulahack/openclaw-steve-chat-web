@@ -352,10 +352,10 @@ input[type="text"] {
 
 .model-item.active { border-color: #4f6cff; }
 
-@media (min-width: 860px) {
+@media (min-width: 700px) {
   .app-shell {
     display: grid;
-    grid-template-columns: minmax(280px, 340px) 1fr;
+    grid-template-columns: minmax(250px, 320px) 1fr;
     min-height: var(--app-height);
     height: var(--app-height);
     background: #0a0f1f;
