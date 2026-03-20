@@ -7,11 +7,13 @@ Mobile-first local chat UI prototype inspired by Allan's sketch (hamburger menu,
 - Step 1: repo scaffold ✅
 - Step 2: mobile shell/UI ✅
 - Step 3: tap-through chat flow ✅
-  - chat drawer
+  - chat drawer + searchable chat history
   - model picker sheet
-  - message composer + mock Steve replies
+  - settings sheet (endpoint + runtime mode)
+  - message composer + mock Steve replies + mock mic button
   - optional live wire-up to local OpenAI-compatible endpoint (`/v1/models`, `/v1/chat/completions`)
   - foldable/wide layout: persistent left chat drawer + right chat pane
+  - collapsible wide-mode sidebar rail with deterministic SHA-256 identicon artwork per chat
 
 ## Run locally
 
@@ -25,7 +27,7 @@ Open:
 
 ## Live mode
 
-From the drawer:
+From the **Settings** button (⚙):
 
 1. Set base URL (default `http://127.0.0.1:18080`)
 2. Tap **Detect** to load local models

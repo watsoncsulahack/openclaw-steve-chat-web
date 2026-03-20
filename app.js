@@ -30,6 +30,7 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 const WIDE_QUERY = "(min-width: 700px)";
+const identiconCache = new Map();
 
 const els = {
   appShell: document.querySelector(".app-shell"),
@@ -43,6 +44,8 @@ const els = {
   sidebarRail: $("sidebarRail"),
   modelList: $("modelList"),
   modelSheet: $("modelSheet"),
+  settingsSheet: $("settingsSheet"),
+  settingsBtn: $("settingsBtn"),
   currentModelLabel: $("currentModelLabel"),
   messageInput: $("messageInput"),
   baseUrlInput: $("baseUrlInput"),
@@ -52,6 +55,7 @@ const els = {
   statusDot: document.querySelector(".status-dot"),
   micBtn: $("micBtn"),
   composer: document.querySelector(".composer"),
+  closeSettingsBtn: $("closeSettingsBtn"),
 };
 
 function init() {
@@ -68,10 +72,13 @@ function bindEvents() {
   els.backdrop.addEventListener("click", () => {
     toggleDrawer(false);
     toggleModelSheet(false);
+    toggleSettingsSheet(false);
   });
 
   $("modelPickerBtn").addEventListener("click", () => toggleModelSheet(true));
   $("closeModelSheetBtn").addEventListener("click", () => toggleModelSheet(false));
+  els.settingsBtn.addEventListener("click", () => toggleSettingsSheet(true));
+  els.closeSettingsBtn.addEventListener("click", () => toggleSettingsSheet(false));
 
   $("saveBaseUrlBtn").addEventListener("click", saveBaseUrl);
   $("detectModelsBtn").addEventListener("click", detectModels);
@@ -163,13 +170,28 @@ function toggleDrawer(open) {
 }
 
 function toggleModelSheet(open) {
+  if (open) {
+    els.settingsSheet.classList.remove("show");
+  }
   els.modelSheet.classList.toggle("show", open);
+  syncBackdrop();
+}
+
+function toggleSettingsSheet(open) {
+  if (open) {
+    els.modelSheet.classList.remove("show");
+  }
+  els.settingsSheet.classList.toggle("show", open);
   syncBackdrop();
 }
 
 function syncBackdrop() {
   const wide = isWide();
-  const show = !wide && (els.drawer.classList.contains("open") || els.modelSheet.classList.contains("show"));
+  const show = !wide && (
+    els.drawer.classList.contains("open") ||
+    els.modelSheet.classList.contains("show") ||
+    els.settingsSheet.classList.contains("show")
+  );
   els.backdrop.classList.toggle("show", show);
 }
 
@@ -219,7 +241,7 @@ function renderSidebarRail() {
     const b = document.createElement("button");
     b.className = `rail-btn ${chat.id === state.activeChatId ? "active" : ""}`;
     b.title = chat.title;
-    b.textContent = (chat.title || "?").trim().slice(0, 1).toUpperCase();
+    paintIdenticon(b, chat.id, 42, 12);
     b.addEventListener("click", () => switchChat(chat.id));
     els.sidebarRail.appendChild(b);
   });
@@ -242,7 +264,20 @@ function renderChats() {
   items.forEach((chat) => {
     const div = document.createElement("div");
     div.className = `chat-item ${chat.id === state.activeChatId ? "active" : ""}`;
-    div.innerHTML = `<strong>${chat.title}</strong><br /><small>${chat.subtitle}</small>`;
+
+    const icon = document.createElement("div");
+    icon.className = "chat-identicon";
+    paintIdenticon(icon, chat.id, 28, 8);
+
+    const text = document.createElement("div");
+    text.innerHTML = `<strong>${chat.title}</strong><br /><small>${chat.subtitle}</small>`;
+
+    const row = document.createElement("div");
+    row.className = "chat-item-inner";
+    row.appendChild(icon);
+    row.appendChild(text);
+
+    div.appendChild(row);
     div.addEventListener("click", () => switchChat(chat.id));
     els.chatList.appendChild(div);
   });
@@ -309,6 +344,74 @@ function renderModeUi() {
   if (els.statusDot) {
     els.statusDot.style.background = state.liveMode ? "#3ad06b" : "#6d7cb4";
   }
+}
+
+async function sha256Bytes(text) {
+  if (crypto?.subtle) {
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+    return Array.from(new Uint8Array(buf));
+  }
+
+  // fallback (non-cryptographic) for older environments
+  let h = 2166136261;
+  const out = new Array(32).fill(0);
+  for (let i = 0; i < text.length; i += 1) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+    out[i % 32] = (out[i % 32] + (h >>> ((i % 4) * 8))) & 255;
+  }
+  return out;
+}
+
+async function identiconSvg(seed, size = 42, radius = 10) {
+  const bytes = await sha256Bytes(seed);
+  const hue = bytes[0] % 360;
+  const hue2 = (hue + 90 + (bytes[1] % 80)) % 360;
+  const bg = `hsl(${hue2} 38% 14%)`;
+  const fg = `hsl(${hue} 75% 58%)`;
+
+  const n = 5;
+  const pad = Math.max(2, Math.floor(size * 0.12));
+  const cell = Math.floor((size - pad * 2) / n);
+
+  let rects = "";
+  let bit = 0;
+  for (let y = 0; y < n; y += 1) {
+    for (let x = 0; x < Math.ceil(n / 2); x += 1) {
+      const on = ((bytes[2 + (bit % 24)] >> (bit % 8)) & 1) === 1;
+      bit += 1;
+      if (!on) continue;
+
+      const x1 = pad + x * cell;
+      const xm = pad + (n - 1 - x) * cell;
+      const y1 = pad + y * cell;
+      rects += `<rect x="${x1}" y="${y1}" width="${cell}" height="${cell}" fill="${fg}" rx="2"/>`;
+      if (xm !== x1) {
+        rects += `<rect x="${xm}" y="${y1}" width="${cell}" height="${cell}" fill="${fg}" rx="2"/>`;
+      }
+    }
+  }
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><rect width="${size}" height="${size}" rx="${radius}" fill="${bg}"/>${rects}</svg>`;
+}
+
+function paintIdenticon(el, seed, size = 42, radius = 10) {
+  const key = `${seed}:${size}:${radius}`;
+  const cached = identiconCache.get(key);
+  if (cached) {
+    el.style.backgroundImage = `url("${cached}")`;
+    return;
+  }
+
+  identiconSvg(seed, size, radius)
+    .then((svg) => {
+      const data = `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+      identiconCache.set(key, data);
+      el.style.backgroundImage = `url("${data}")`;
+    })
+    .catch(() => {
+      el.style.backgroundImage = "none";
+    });
 }
 
 function toggleMockMic() {

@@ -57,12 +57,18 @@ body { min-height: 100dvh; }
   background: #0d1430;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-self: end;
+}
+
 .status-dot {
   width: 10px;
   height: 10px;
   border-radius: 999px;
   background: #6d7cb4;
-  justify-self: center;
 }
 
 .icon-btn,
@@ -223,6 +229,8 @@ body { min-height: 100dvh; }
   background: #151f44;
   color: #eef2ff;
   font-weight: 700;
+  background-size: cover;
+  background-position: center;
 }
 
 .rail-btn.active {
@@ -236,6 +244,12 @@ body { min-height: 100dvh; }
   border-radius: 12px;
   padding: 10px;
   background: #111933;
+}
+
+.drawer-section.drawer-chats {
+  border: none;
+  background: transparent;
+  padding: 2px 0 10px;
 }
 
 .drawer-section h3 { margin: 0; font-size: 14px; color: #d6ddff; }
@@ -261,8 +275,7 @@ body { min-height: 100dvh; }
 .chat-list {
   display: grid;
   gap: 8px;
-  max-height: min(48dvh, 420px);
-  overflow: auto;
+  overflow: visible;
 }
 
 .chat-item {
@@ -271,6 +284,23 @@ body { min-height: 100dvh; }
   border-radius: 10px;
   padding: 9px;
   cursor: pointer;
+}
+
+.chat-item-inner {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 10px;
+  align-items: center;
+}
+
+.chat-identicon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid #2e3a68;
+  background-size: cover;
+  background-position: center;
+  background-color: #0f1630;
 }
 
 .chat-item.active {
@@ -364,6 +394,16 @@ input[type="text"] {
   display: grid;
   gap: 8px;
   padding: 10px;
+}
+
+.settings-card {
+  max-width: 460px;
+}
+
+.settings-body {
+  padding: 12px;
+  display: grid;
+  gap: 8px;
 }
 
 .model-item {
