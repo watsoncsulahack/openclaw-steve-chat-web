@@ -98,6 +98,7 @@ export class SteveChatApp {
 
     this.els.saveBaseUrlBtn.addEventListener("click", () => this.saveBaseUrl());
     this.els.detectModelsBtn.addEventListener("click", () => this.detectModels());
+    this.els.connectLocalLlamaBtn.addEventListener("click", () => this.connectLocalLlama());
 
     this.els.chatSearchInput.addEventListener("input", (e) => {
       this.state.chatFilter = (e.target.value || "").toLowerCase().trim();
@@ -682,6 +683,13 @@ export class SteveChatApp {
     };
 
     recognizer.start();
+  }
+
+  async connectLocalLlama() {
+    this.els.baseUrlInput.value = "http://127.0.0.1:18080";
+    this.saveBaseUrl();
+    this.setRuntimeState("working", "Connecting to local llama.cpp endpoint...");
+    await this.detectModels();
   }
 
   saveBaseUrl() {

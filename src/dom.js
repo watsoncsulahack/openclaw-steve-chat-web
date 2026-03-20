@@ -43,6 +43,7 @@ export function getDomRefs() {
     closeModelSheetBtn: $("closeModelSheetBtn"),
     saveBaseUrlBtn: $("saveBaseUrlBtn"),
     detectModelsBtn: $("detectModelsBtn"),
+    connectLocalLlamaBtn: $("connectLocalLlamaBtn"),
     sendBtn: $("sendBtn"),
     plusBtn: $("plusBtn"),
   };
