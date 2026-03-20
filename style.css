@@ -132,12 +132,29 @@ body { min-height: 100dvh; }
 }
 
 .msg-row {
+  position: relative;
   display: flex;
   align-items: flex-end;
   gap: 8px;
   max-width: 90%;
   touch-action: pan-y;
   transition: transform 120ms ease;
+}
+
+.msg-swipe-cue {
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  font-weight: 700;
+  color: #d6e3ff;
+  opacity: 0;
+  transition: opacity 90ms ease;
+}
+
+.msg-row.swipe-preview-right .msg-swipe-cue {
+  opacity: 1;
 }
 
 .msg-row.user {
@@ -289,8 +306,9 @@ body { min-height: 100dvh; }
 }
 
 .icon-btn.active {
-  border-color: #6683e0;
-  background: #223a86;
+  border-color: #85a1ff;
+  background: #2a469d;
+  box-shadow: inset 0 0 0 1px #5d79d8;
 }
 
 #drawerCompactBtn {
@@ -402,6 +420,8 @@ body { min-height: 100dvh; }
 }
 
 .chat-item {
+  position: relative;
+  overflow: hidden;
   background: #131c3d;
   border: 1px solid #24315f;
   border-radius: 10px;
@@ -412,10 +432,42 @@ body { min-height: 100dvh; }
 }
 
 .chat-item-inner {
+  position: relative;
+  z-index: 2;
   display: grid;
   grid-template-columns: 28px 1fr;
   gap: 10px;
   align-items: center;
+}
+
+.swipe-cue {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0;
+  transition: opacity 100ms ease;
+  pointer-events: none;
+  padding: 0 10px;
+}
+
+.swipe-cue-right {
+  justify-content: flex-start;
+  background: linear-gradient(90deg, rgba(31,115,70,.7), rgba(20,32,58,0));
+  color: #d8ffea;
+}
+
+.swipe-cue-left {
+  justify-content: flex-end;
+  background: linear-gradient(-90deg, rgba(150,45,56,.72), rgba(20,32,58,0));
+  color: #ffd8dd;
+}
+
+.chat-item.swipe-preview-right .swipe-cue-right,
+.chat-item.swipe-preview-left .swipe-cue-left {
+  opacity: 1;
 }
 
 .chat-identicon {
@@ -468,11 +520,27 @@ input[type="text"] {
 
 .composer-mic {
   background: #1a2344;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.mic-glyph {
+  width: 22px;
+  height: 22px;
+  stroke: #dce7ff;
+  fill: none;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .composer-send {
   background: #273f9b;
   border-color: #4965d0;
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .composer-mic.active {

@@ -146,6 +146,8 @@ function applySidebarLayoutState() {
   els.appShell.classList.toggle("sidebar-collapsed", collapsed);
   els.drawerCompactBtn.textContent = collapsed ? "»" : "«";
   els.drawerCompactBtn.title = collapsed ? "Expand sidebar" : "Collapse to sidebar";
+  els.settingsBtn.hidden = collapsed;
+  els.archivesBtn.hidden = collapsed;
 }
 
 function toggleSidebarCollapsed() {
@@ -232,9 +234,10 @@ function renderChatSearchState() {
 
 function renderArchiveState() {
   els.archivesBtn.classList.toggle("active", state.showArchived);
-  els.archivesBtn.title = state.showArchived ? "Showing archived chats" : "Show archived chats";
+  els.archivesBtn.setAttribute("aria-pressed", String(state.showArchived));
+  els.archivesBtn.title = state.showArchived ? "Showing archived chats (tap to return)" : "Show archived chats";
   if (els.chatListTitle) {
-    els.chatListTitle.textContent = state.showArchived ? "Archived" : "All chats";
+    els.chatListTitle.textContent = state.showArchived ? "Archived (tap 🗃 to return)" : "All chats";
   }
 }
 
@@ -371,29 +374,61 @@ function renderChats() {
     row.appendChild(icon);
     row.appendChild(text);
 
+    const cueRight = document.createElement("div");
+    cueRight.className = "swipe-cue swipe-cue-right";
+    cueRight.textContent = "↳ Archive";
+
+    const cueLeft = document.createElement("div");
+    cueLeft.className = "swipe-cue swipe-cue-left";
+    cueLeft.textContent = "Delete 🗑";
+
+    div.appendChild(cueRight);
+    div.appendChild(cueLeft);
     div.appendChild(row);
 
     bindSwipeAction(div, {
       onLeft: () => deleteChat(chat.id),
       onRight: () => toggleArchiveChat(chat.id),
       onTap: () => switchChat(chat.id),
+      previewClassRight: "swipe-preview-right",
+      previewClassLeft: "swipe-preview-left",
+      threshold: 84,
     });
 
     els.chatList.appendChild(div);
   });
 }
 
-function bindSwipeAction(el, { onLeft, onRight, onTap, threshold = 72 }) {
+function bindSwipeAction(el, {
+  onLeft,
+  onRight,
+  onTap,
+  threshold = 72,
+  previewClassRight,
+  previewClassLeft,
+}) {
   let sx = 0;
+  let sy = 0;
   let dx = 0;
-  let dragging = false;
+  let dy = 0;
   let active = false;
+  let dragging = false;
+
+  const resetVisual = () => {
+    el.style.transition = "transform 140ms ease, opacity 140ms ease";
+    el.style.transform = "translateX(0)";
+    el.style.opacity = "1";
+    if (previewClassRight) el.classList.remove(previewClassRight);
+    if (previewClassLeft) el.classList.remove(previewClassLeft);
+  };
 
   const start = (e) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
     active = true;
     sx = e.clientX;
+    sy = e.clientY;
     dx = 0;
+    dy = 0;
     dragging = false;
     el.style.transition = "none";
   };
@@ -401,38 +436,57 @@ function bindSwipeAction(el, { onLeft, onRight, onTap, threshold = 72 }) {
   const move = (e) => {
     if (!active) return;
     dx = e.clientX - sx;
-    if (Math.abs(dx) > 8) {
+    dy = e.clientY - sy;
+
+    if (!dragging) {
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+      if (Math.abs(dy) > Math.abs(dx)) {
+        active = false;
+        resetVisual();
+        return;
+      }
       dragging = true;
-      const clamped = Math.max(-96, Math.min(96, dx));
-      el.style.transform = `translateX(${clamped}px)`;
-      el.style.opacity = "0.92";
+    }
+
+    const clamped = Math.max(-96, Math.min(96, dx));
+    el.style.transform = `translateX(${clamped}px)`;
+    el.style.opacity = "0.92";
+
+    if (previewClassRight || previewClassLeft) {
+      const dir = clamped > 18 ? "right" : clamped < -18 ? "left" : "none";
+      if (previewClassRight) el.classList.toggle(previewClassRight, dir === "right");
+      if (previewClassLeft) el.classList.toggle(previewClassLeft, dir === "left");
     }
   };
 
-  const end = () => {
-    if (!active) return;
-    active = false;
+  const finish = (triggerAction) => {
+    if (!active && !dragging) return;
+
     const finalDx = dx;
+    const wasDragging = dragging;
+    active = false;
+    dragging = false;
     sx = 0;
+    sy = 0;
     dx = 0;
+    dy = 0;
 
-    el.style.transition = "transform 140ms ease, opacity 140ms ease";
-    el.style.transform = "translateX(0)";
-    el.style.opacity = "1";
+    resetVisual();
 
-    if (dragging && Math.abs(finalDx) >= threshold) {
+    if (triggerAction && wasDragging && Math.abs(finalDx) >= threshold) {
       if (finalDx > 0) onRight?.();
       else onLeft?.();
       return;
     }
 
-    if (!dragging) onTap?.();
+    if (triggerAction && !wasDragging) onTap?.();
   };
 
   el.addEventListener("pointerdown", start);
   el.addEventListener("pointermove", move);
-  el.addEventListener("pointerup", end);
-  el.addEventListener("pointercancel", end);
+  el.addEventListener("pointerup", () => finish(true));
+  el.addEventListener("pointercancel", () => finish(false));
+  el.addEventListener("lostpointercapture", () => finish(false));
 }
 
 function deleteChat(chatId) {
@@ -516,9 +570,15 @@ function renderMessages() {
     row.appendChild(avatar);
     row.appendChild(bubble);
 
+    const cue = document.createElement("div");
+    cue.className = "msg-swipe-cue";
+    cue.textContent = "↩ Reply";
+    row.appendChild(cue);
+
     bindSwipeAction(row, {
       onRight: () => setReplyTarget(idx, msg),
-      threshold: 56,
+      threshold: 72,
+      previewClassRight: "swipe-preview-right",
     });
 
     els.messages.appendChild(row);
