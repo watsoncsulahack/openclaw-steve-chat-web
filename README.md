@@ -11,6 +11,7 @@ Mobile-first local chat UI prototype inspired by Allan's sketch (hamburger menu,
   - model picker sheet
   - settings sheet (endpoint + runtime mode)
   - message composer + mock Steve replies + mock mic button
+  - top-right TPS badge (`LIVE` from runtime timings or `SIM` in UI Demo mode)
   - optional live wire-up to local OpenAI-compatible endpoint (`/v1/models`, `/v1/chat/completions`)
   - foldable/wide layout: persistent left chat drawer + right chat pane
   - collapsible wide-mode sidebar rail with deterministic SHA-256 identicon artwork per chat
@@ -35,7 +36,7 @@ From the **Settings** button (⚙):
    - **UI Demo** (mock Steve replies)
    - **Local Runtime** (real endpoint calls)
 
-UI Demo mode is default so UX flow can be reviewed without model runtime dependency.
+UI Demo mode is default so UX flow can be reviewed without model runtime dependency (simulated bot replies + simulated TPS values).
 
 ## Next iteration ideas
 

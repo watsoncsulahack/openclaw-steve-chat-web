@@ -55,6 +55,7 @@ const els = {
   mockModeBtn: $("mockModeBtn"),
   runtimeModeBtn: $("runtimeModeBtn"),
   statusDot: document.querySelector(".status-dot"),
+  tpsBadge: $("tpsBadge"),
   micBtn: $("micBtn"),
   composer: document.querySelector(".composer"),
   closeSettingsBtn: $("closeSettingsBtn"),
@@ -66,6 +67,7 @@ function init() {
   bindViewportFixes();
   syncViewport();
   renderAll();
+  setTps(null);
 }
 
 function bindEvents() {
@@ -133,7 +135,7 @@ function applySidebarLayoutState() {
   const wide = isWide();
   const collapsed = wide && state.sidebarCollapsed;
   els.appShell.classList.toggle("sidebar-collapsed", collapsed);
-  els.drawerCompactBtn.textContent = collapsed ? "▸" : "◧";
+  els.drawerCompactBtn.textContent = collapsed ? "»" : "«";
   els.drawerCompactBtn.title = collapsed ? "Expand sidebar" : "Collapse to sidebar";
 }
 
@@ -359,6 +361,7 @@ function syncModelLabel() {
 function setMode(live) {
   state.liveMode = live;
   localStorage.setItem("steve.liveMode", state.liveMode ? "1" : "0");
+  setTps(null);
   renderModeUi();
 }
 
@@ -393,36 +396,33 @@ async function sha256Bytes(text) {
 async function identiconSvg(seed, size = 42, radius = 10) {
   const bytes = await sha256Bytes(seed);
 
-  const mutedPalette = [
-    ["#8ea2b5", "#1b2230"],
-    ["#9cabbe", "#1a2333"],
-    ["#8e9fb0", "#202735"],
-    ["#a3b1c0", "#1c2431"],
-    ["#8c9caf", "#1a2130"],
-  ];
-
-  const pair = mutedPalette[bytes[0] % mutedPalette.length];
-  const fg = pair[0];
-  const bg = pair[1];
+  // More expressive (still readable) hash palette.
+  const hue = Math.round((bytes[0] / 255) * 360);
+  const hue2 = (hue + 170 + (bytes[1] % 60)) % 360;
+  const fg = `hsl(${hue} ${62 + (bytes[2] % 18)}% ${56 + (bytes[3] % 10)}%)`;
+  const bg = `hsl(${hue2} ${34 + (bytes[4] % 14)}% ${14 + (bytes[5] % 7)}%)`;
 
   const n = 5;
   const pad = Math.max(2, Math.floor(size * 0.12));
-  const cell = Math.floor((size - pad * 2) / n);
+  const usable = size - pad * 2;
+  const cell = usable / n;
+  const offsetX = (size - cell * n) / 2;
+  const offsetY = offsetX;
 
   let rects = "";
   let bit = 0;
   for (let y = 0; y < n; y += 1) {
     for (let x = 0; x < Math.ceil(n / 2); x += 1) {
-      const on = ((bytes[2 + (bit % 24)] >> (bit % 8)) & 1) === 1;
+      const on = ((bytes[6 + (bit % 24)] >> (bit % 8)) & 1) === 1;
       bit += 1;
       if (!on) continue;
 
-      const x1 = pad + x * cell;
-      const xm = pad + (n - 1 - x) * cell;
-      const y1 = pad + y * cell;
-      rects += `<rect x="${x1}" y="${y1}" width="${cell}" height="${cell}" fill="${fg}" rx="1"/>`;
+      const x1 = offsetX + x * cell;
+      const xm = offsetX + (n - 1 - x) * cell;
+      const y1 = offsetY + y * cell;
+      rects += `<rect x="${x1.toFixed(2)}" y="${y1.toFixed(2)}" width="${cell.toFixed(2)}" height="${cell.toFixed(2)}" fill="${fg}" rx="1.2"/>`;
       if (xm !== x1) {
-        rects += `<rect x="${xm}" y="${y1}" width="${cell}" height="${cell}" fill="${fg}" rx="1"/>`;
+        rects += `<rect x="${xm.toFixed(2)}" y="${y1.toFixed(2)}" width="${cell.toFixed(2)}" height="${cell.toFixed(2)}" fill="${fg}" rx="1.2"/>`;
       }
     }
   }
@@ -506,20 +506,64 @@ function appendMessage(role, text) {
   renderMessages();
 }
 
+function setTps(value, isLive = false) {
+  if (!els.tpsBadge) return;
+  if (value == null || Number.isNaN(Number(value))) {
+    els.tpsBadge.textContent = "TPS: --";
+    return;
+  }
+  const n = Number(value);
+  const fixed = n >= 10 ? n.toFixed(0) : n.toFixed(1);
+  els.tpsBadge.textContent = `${isLive ? "LIVE" : "SIM"} TPS ${fixed}`;
+}
+
+function mockReplyForChat(chatId, userText) {
+  const bank = {
+    steve: [
+      `Copy that. You said: “${userText}”. Want me to branch this into a task?`,
+      "Nice. I can simulate a longer robot answer if you want stress testing.",
+      "I’m Steve 🤖 and this is a dummy conversation pass with fake timing.",
+    ],
+    ops: [
+      "[OPS] Health check simulated: all services green.",
+      "[OPS] Build queue empty. No alerts.",
+      "[OPS] Dummy telemetry: memory stable, no throttling.",
+    ],
+    ideas: [
+      "Feature sketch noted: voice shortcut + one-tap transcript.",
+      "Possible UX: swipe right from composer for quick actions.",
+      "This is simulated ideation output with placeholder confidence.",
+    ],
+  };
+
+  const list = bank[chatId] || [
+    `Simulated robot response for ${chatId}.`,
+    `I heard: ${userText}`,
+  ];
+  const idx = Math.floor(Math.random() * list.length);
+  return list[idx];
+}
+
 async function onSend() {
   const text = (els.messageInput.value || "").trim();
   if (!text) return;
   els.messageInput.value = "";
   appendMessage("user", text);
 
+  setTps(null);
+
   if (state.liveMode) {
     await sendLive(text);
     return;
   }
 
+  const delayMs = 220 + Math.floor(Math.random() * 700);
+  const simTps = 9 + Math.random() * 22;
+
   window.setTimeout(() => {
-    appendMessage("steve", `UI mock reply: got “${text}”.\n(Enable live mode when ready.)`);
-  }, 280);
+    appendMessage("steve", mockReplyForChat(state.activeChatId, text));
+    setTps(simTps, false);
+  }, delayMs);
 }
 
 async function sendLive(text) {
@@ -538,9 +582,12 @@ async function sendLive(text) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const reply = data?.choices?.[0]?.message?.content?.trim() || "(empty reply)";
+    const tps = data?.timings?.predicted_per_second ?? data?.usage?.tokens_per_second ?? null;
     appendMessage("steve", reply);
+    setTps(tps, true);
   } catch (err) {
     appendMessage("steve", `Live call failed: ${err.message}`);
+    setTps(null);
   }
 }
 

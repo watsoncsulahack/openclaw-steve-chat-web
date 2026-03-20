@@ -64,6 +64,18 @@ body { min-height: 100dvh; }
   justify-self: end;
 }
 
+.tps-badge {
+  font-size: 12px;
+  line-height: 1;
+  border: 1px solid #334377;
+  background: #1a2347;
+  color: #d7e4ff;
+  border-radius: 999px;
+  padding: 6px 10px;
+  min-width: 72px;
+  text-align: center;
+}
+
 .status-dot {
   width: 10px;
   height: 10px;
@@ -221,6 +233,9 @@ body { min-height: 100dvh; }
 
 #drawerCompactBtn {
   display: none;
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .sidebar-rail {
@@ -235,7 +250,8 @@ body { min-height: 100dvh; }
   background: #151f44;
   color: #eef2ff;
   font-weight: 700;
-  background-size: cover;
+  background-size: 82% 82%;
+  background-repeat: no-repeat;
   background-position: center;
 }
 
@@ -336,7 +352,8 @@ body { min-height: 100dvh; }
   height: 30px;
   border-radius: 8px;
   border: 1px solid #3a4666;
-  background-size: cover;
+  background-size: 84% 84%;
+  background-repeat: no-repeat;
   background-position: center;
   background-color: #121826;
 }
