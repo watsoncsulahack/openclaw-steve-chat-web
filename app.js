@@ -2,6 +2,7 @@ const state = {
   baseUrl: localStorage.getItem("steve.baseUrl") || "http://127.0.0.1:18080",
   liveMode: localStorage.getItem("steve.liveMode") === "1",
   sidebarCollapsed: localStorage.getItem("steve.sidebarCollapsed") === "1",
+  theme: localStorage.getItem("steve.theme") || "dark",
   showArchived: false,
   replyTarget: null,
   mockMicOn: false,
@@ -59,7 +60,7 @@ const els = {
   mockModeBtn: $("mockModeBtn"),
   runtimeModeBtn: $("runtimeModeBtn"),
   statusDot: document.querySelector(".status-dot"),
-  tpsBadge: $("tpsBadge"),
+  themeToggleBtn: $("themeToggleBtn"),
   micBtn: $("micBtn"),
   composer: document.querySelector(".composer"),
   replyBanner: $("replyBanner"),
@@ -70,11 +71,11 @@ const els = {
 
 function init() {
   els.baseUrlInput.value = state.baseUrl;
+  applyTheme();
   bindEvents();
   bindViewportFixes();
   syncViewport();
   renderAll();
-  setTps(null);
 }
 
 function bindEvents() {
@@ -106,6 +107,7 @@ function bindEvents() {
   els.archivesBtn.addEventListener("click", toggleArchivedView);
   els.drawerCompactBtn.addEventListener("click", toggleSidebarCollapsed);
   els.clearReplyBtn.addEventListener("click", clearReplyTarget);
+  els.themeToggleBtn.addEventListener("click", toggleTheme);
 
   els.mockModeBtn.addEventListener("click", () => setMode(false));
   els.runtimeModeBtn.addEventListener("click", () => setMode(true));
@@ -138,6 +140,18 @@ function bindViewportFixes() {
 
 function isWide() {
   return window.matchMedia(WIDE_QUERY).matches;
+}
+
+function applyTheme() {
+  document.body.classList.toggle("theme-light", state.theme === "light");
+  els.themeToggleBtn.textContent = state.theme === "light" ? "🌙" : "☀";
+  els.themeToggleBtn.title = state.theme === "light" ? "Switch to dark mode" : "Switch to light mode";
+}
+
+function toggleTheme() {
+  state.theme = state.theme === "light" ? "dark" : "light";
+  localStorage.setItem("steve.theme", state.theme);
+  applyTheme();
 }
 
 function applySidebarLayoutState() {
@@ -587,6 +601,15 @@ function renderMessages() {
     body.textContent = msg.text;
     bubble.appendChild(body);
 
+    if (msg.role === "steve" && msg.tps != null) {
+      const meta = document.createElement("div");
+      meta.className = "msg-tps";
+      const n = Number(msg.tps);
+      const fixed = Number.isFinite(n) ? (n >= 10 ? n.toFixed(0) : n.toFixed(1)) : "--";
+      meta.textContent = `${msg.tpsMode || "TPS"} ${fixed}`;
+      bubble.appendChild(meta);
+    }
+
     row.appendChild(avatar);
     row.appendChild(bubble);
 
@@ -632,7 +655,6 @@ function syncModelLabel() {
 function setMode(live) {
   state.liveMode = live;
   localStorage.setItem("steve.liveMode", state.liveMode ? "1" : "0");
-  setTps(null);
   renderModeUi();
 }
 
@@ -777,17 +799,6 @@ function appendMessage(role, text, options = {}) {
   renderMessages();
 }
 
-function setTps(value, isLive = false) {
-  if (!els.tpsBadge) return;
-  if (value == null || Number.isNaN(Number(value))) {
-    els.tpsBadge.textContent = "TPS: --";
-    return;
-  }
-  const n = Number(value);
-  const fixed = n >= 10 ? n.toFixed(0) : n.toFixed(1);
-  els.tpsBadge.textContent = `${isLive ? "LIVE" : "SIM"} TPS ${fixed}`;
-}
-
 function mockReplyForChat(chatId, userText) {
   const bank = {
     steve: [
@@ -827,8 +838,6 @@ async function onSend() {
   appendMessage("user", text, replyTo ? { replyTo } : {});
   clearReplyTarget();
 
-  setTps(null);
-
   if (state.liveMode) {
     await sendLive(text);
     return;
@@ -838,8 +847,7 @@ async function onSend() {
   const simTps = 9 + Math.random() * 22;
 
   window.setTimeout(() => {
-    appendMessage("steve", mockReplyForChat(state.activeChatId, text));
-    setTps(simTps, false);
+    appendMessage("steve", mockReplyForChat(state.activeChatId, text), { tps: simTps, tpsMode: "SIM TPS" });
   }, delayMs);
 }
 
@@ -860,13 +868,11 @@ async function sendLive(text) {
     const data = await res.json();
     const reply = data?.choices?.[0]?.message?.content?.trim() || "(empty reply)";
     const tps = data?.timings?.predicted_per_second ?? data?.usage?.tokens_per_second ?? null;
-    appendMessage("steve", reply);
-    setTps(tps, true);
+    appendMessage("steve", reply, { tps, tpsMode: "LIVE TPS" });
   } catch (err) {
     const simTps = 8 + Math.random() * 20;
     appendMessage("steve", `Live call failed: ${err.message}`);
-    appendMessage("steve", `[Simulated fallback] ${mockReplyForChat(state.activeChatId, text)}`);
-    setTps(simTps, false);
+    appendMessage("steve", `[Simulated fallback] ${mockReplyForChat(state.activeChatId, text)}`, { tps: simTps, tpsMode: "SIM TPS" });
   }
 }
 

@@ -25,6 +25,28 @@ html, body {
 
 body { min-height: 100dvh; }
 
+body.theme-light {
+  --bg: #eef3ff;
+  --panel: #f8fbff;
+  --panel-2: #e6edff;
+  --line: #bcc8ef;
+  --steve: #dde6ff;
+  --user: #5d7bff;
+  color: #1e2a4d;
+  background: linear-gradient(180deg, #e9efff, #f6f9ff);
+}
+
+body.theme-light .topbar,
+body.theme-light .composer,
+body.theme-light .drawer,
+body.theme-light .model-sheet-card {
+  background: #f4f7ff;
+}
+
+body.theme-light .bubble {
+  color: #1e2a4d;
+}
+
 .app-shell {
   min-height: 100dvh;
   padding: 0;
@@ -64,16 +86,10 @@ body { min-height: 100dvh; }
   justify-self: end;
 }
 
-.tps-badge {
-  font-size: 12px;
-  line-height: 1;
-  border: 1px solid #334377;
-  background: #1a2347;
-  color: #d7e4ff;
-  border-radius: 999px;
-  padding: 6px 10px;
-  min-width: 72px;
-  text-align: center;
+.msg-tps {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #b9c8f8;
 }
 
 .status-dot {
