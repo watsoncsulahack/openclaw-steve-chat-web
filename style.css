@@ -389,7 +389,7 @@ body.theme-light .icon-btn.active {
 .drawer-section.drawer-chats {
   border: none;
   background: transparent;
-  padding: 2px 0 10px;
+  padding: 0 0 8px;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -402,7 +402,7 @@ body.theme-light .icon-btn.active {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .secondary.mini {
@@ -416,7 +416,7 @@ body.theme-light .icon-btn.active {
 
 .chat-search-wrap {
   position: relative;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .chat-search-wrap input {
@@ -446,7 +446,7 @@ body.theme-light .icon-btn.active {
 .chat-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
@@ -607,9 +607,12 @@ body.theme-light .composer-mic {
   color: #1c2a4f;
 }
 
-body.theme-light .send-glyph,
 body.theme-light .mic-glyph {
   stroke: #23376a;
+}
+
+body.theme-light .send-glyph {
+  stroke: #f7f9ff;
 }
 
 body.theme-light .status-dot {
