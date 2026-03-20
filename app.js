@@ -34,6 +34,7 @@ const state = {
 const $ = (id) => document.getElementById(id);
 const WIDE_QUERY = "(min-width: 700px)";
 const identiconCache = new Map();
+const ARCHIVE_ICON_SVG = '<svg class="archive-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16"/><rect x="5" y="6" width="14" height="13" rx="2"/><path d="M9 11h6"/><path d="M9 14h6"/></svg>';
 
 const els = {
   appShell: document.querySelector(".app-shell"),
@@ -362,7 +363,7 @@ function renderSidebarRail() {
 
   const archiveRailBtn = document.createElement("button");
   archiveRailBtn.className = `rail-btn rail-action ${state.showArchived ? "active" : ""}`;
-  archiveRailBtn.textContent = "🗄";
+  archiveRailBtn.innerHTML = ARCHIVE_ICON_SVG;
   archiveRailBtn.title = "Archives";
   archiveRailBtn.addEventListener("click", toggleArchivedView);
   els.sidebarRail.appendChild(archiveRailBtn);

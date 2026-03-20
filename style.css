@@ -330,7 +330,7 @@ body.theme-light .bubble {
 
 #drawerCompactBtn {
   display: none;
-  font-size: 36px;
+  font-size: 40px;
   font-weight: 800;
   line-height: 1;
 }
@@ -551,6 +551,16 @@ input[type="text"] {
   stroke: #dce7ff;
   fill: none;
   stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.archive-glyph {
+  width: 22px;
+  height: 22px;
+  stroke: #e8efff;
+  fill: none;
+  stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
