@@ -243,6 +243,15 @@ function renderArchiveState() {
 
 function toggleArchivedView() {
   state.showArchived = !state.showArchived;
+
+  if (state.showArchived) {
+    const firstArchived = state.chats.find((c) => c.archived);
+    if (firstArchived) state.activeChatId = firstArchived.id;
+  } else {
+    const firstMain = state.chats.find((c) => !c.archived);
+    if (firstMain) state.activeChatId = firstMain.id;
+  }
+
   ensureActiveChatVisible();
   renderArchiveState();
   renderChats();
@@ -296,18 +305,26 @@ function switchChat(chatId) {
 }
 
 function ensureActiveChatVisible() {
-  const visible = state.showArchived ? state.chats.filter((c) => c.archived) : state.chats.filter((c) => !c.archived);
-  if (!visible.find((c) => c.id === state.activeChatId)) {
-    if (visible[0]) {
-      state.activeChatId = visible[0].id;
-    } else {
-      const id = `chat-${Date.now()}`;
-      state.chats.unshift({ id, title: "New chat", subtitle: "Just now", archived: false });
-      state.messages[id] = [{ role: "steve", text: "New thread ready." }];
-      state.activeChatId = id;
-      state.showArchived = false;
-      renderArchiveState();
-    }
+  const visible = state.showArchived
+    ? state.chats.filter((c) => c.archived)
+    : state.chats.filter((c) => !c.archived);
+
+  if (visible.find((c) => c.id === state.activeChatId)) return;
+
+  if (state.showArchived) {
+    // In archive view, allow empty list without forcing chat creation.
+    if (visible[0]) state.activeChatId = visible[0].id;
+    return;
+  }
+
+  const firstUnarchived = state.chats.find((c) => !c.archived);
+  if (firstUnarchived) {
+    state.activeChatId = firstUnarchived.id;
+    return;
+  }
+
+  if (state.chats[0]) {
+    state.activeChatId = state.chats[0].id;
   }
 }
 
@@ -389,11 +406,12 @@ function renderChats() {
     bindSwipeAction(div, {
       onLeft: () => deleteChat(chat.id),
       onRight: () => toggleArchiveChat(chat.id),
-      onTap: () => switchChat(chat.id),
       previewClassRight: "swipe-preview-right",
       previewClassLeft: "swipe-preview-left",
-      threshold: 84,
+      threshold: 96,
     });
+
+    div.addEventListener("click", () => switchChat(chat.id));
 
     els.chatList.appendChild(div);
   });
@@ -402,7 +420,6 @@ function renderChats() {
 function bindSwipeAction(el, {
   onLeft,
   onRight,
-  onTap,
   threshold = 72,
   previewClassRight,
   previewClassLeft,
@@ -412,7 +429,7 @@ function bindSwipeAction(el, {
   let dx = 0;
   let dy = 0;
   let active = false;
-  let dragging = false;
+  let dragAxis = "none";
 
   const resetVisual = () => {
     el.style.transition = "transform 140ms ease, opacity 140ms ease";
@@ -425,11 +442,11 @@ function bindSwipeAction(el, {
   const start = (e) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
     active = true;
+    dragAxis = "none";
     sx = e.clientX;
     sy = e.clientY;
     dx = 0;
     dy = 0;
-    dragging = false;
     el.style.transition = "none";
   };
 
@@ -438,34 +455,39 @@ function bindSwipeAction(el, {
     dx = e.clientX - sx;
     dy = e.clientY - sy;
 
-    if (!dragging) {
-      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
-      if (Math.abs(dy) > Math.abs(dx)) {
+    if (dragAxis === "none") {
+      if (Math.abs(dx) < 14 && Math.abs(dy) < 14) return;
+      if (Math.abs(dx) > Math.abs(dy) * 1.35) {
+        dragAxis = "x";
+      } else {
+        dragAxis = "y";
         active = false;
         resetVisual();
         return;
       }
-      dragging = true;
     }
 
-    const clamped = Math.max(-96, Math.min(96, dx));
+    if (dragAxis !== "x") return;
+
+    const clamped = Math.max(-108, Math.min(108, dx));
     el.style.transform = `translateX(${clamped}px)`;
     el.style.opacity = "0.92";
 
     if (previewClassRight || previewClassLeft) {
-      const dir = clamped > 18 ? "right" : clamped < -18 ? "left" : "none";
+      const dir = clamped > 26 ? "right" : clamped < -26 ? "left" : "none";
       if (previewClassRight) el.classList.toggle(previewClassRight, dir === "right");
       if (previewClassLeft) el.classList.toggle(previewClassLeft, dir === "left");
     }
   };
 
-  const finish = (triggerAction) => {
-    if (!active && !dragging) return;
+  const finish = (shouldTrigger) => {
+    if (!active && dragAxis === "none") return;
 
     const finalDx = dx;
-    const wasDragging = dragging;
+    const horizontalDrag = dragAxis === "x";
+
     active = false;
-    dragging = false;
+    dragAxis = "none";
     sx = 0;
     sy = 0;
     dx = 0;
@@ -473,13 +495,11 @@ function bindSwipeAction(el, {
 
     resetVisual();
 
-    if (triggerAction && wasDragging && Math.abs(finalDx) >= threshold) {
-      if (finalDx > 0) onRight?.();
-      else onLeft?.();
-      return;
-    }
+    if (!shouldTrigger || !horizontalDrag) return;
+    if (Math.abs(finalDx) < threshold) return;
 
-    if (triggerAction && !wasDragging) onTap?.();
+    if (finalDx > 0) onRight?.();
+    else onLeft?.();
   };
 
   el.addEventListener("pointerdown", start);
@@ -577,7 +597,7 @@ function renderMessages() {
 
     bindSwipeAction(row, {
       onRight: () => setReplyTarget(idx, msg),
-      threshold: 72,
+      threshold: 88,
       previewClassRight: "swipe-preview-right",
     });
 
