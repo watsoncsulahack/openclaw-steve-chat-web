@@ -38,7 +38,9 @@ const els = {
   backdrop: $("backdrop"),
   messages: $("messages"),
   chatList: $("chatList"),
+  chatSearchWrap: $("chatSearchWrap"),
   chatSearchInput: $("chatSearchInput"),
+  clearChatSearchBtn: $("clearChatSearchBtn"),
   newChatBtn: $("newChatBtn"),
   drawerCompactBtn: $("drawerCompactBtn"),
   sidebarRail: $("sidebarRail"),
@@ -85,8 +87,11 @@ function bindEvents() {
 
   els.chatSearchInput.addEventListener("input", (e) => {
     state.chatFilter = (e.target.value || "").toLowerCase().trim();
+    renderChatSearchState();
     renderChats();
   });
+
+  els.clearChatSearchBtn.addEventListener("click", clearChatSearch);
 
   els.newChatBtn.addEventListener("click", createNewChat);
   els.drawerCompactBtn.addEventListener("click", toggleSidebarCollapsed);
@@ -197,12 +202,26 @@ function syncBackdrop() {
 
 function renderAll() {
   applySidebarLayoutState();
+  renderChatSearchState();
   renderChats();
   renderSidebarRail();
   renderMessages();
   renderModels();
   syncModelLabel();
   renderModeUi();
+}
+
+function renderChatSearchState() {
+  const hasText = (els.chatSearchInput.value || "").trim().length > 0;
+  els.chatSearchWrap?.classList.toggle("has-text", hasText);
+}
+
+function clearChatSearch() {
+  els.chatSearchInput.value = "";
+  state.chatFilter = "";
+  renderChatSearchState();
+  renderChats();
+  els.chatSearchInput.focus();
 }
 
 function createNewChat() {
@@ -213,6 +232,7 @@ function createNewChat() {
   switchChat(id);
   state.chatFilter = "";
   if (els.chatSearchInput) els.chatSearchInput.value = "";
+  renderChatSearchState();
   renderChats();
   renderSidebarRail();
   renderMessages();
@@ -231,17 +251,24 @@ function renderSidebarRail() {
   els.sidebarRail.innerHTML = "";
 
   const newBtn = document.createElement("button");
-  newBtn.className = "rail-btn";
+  newBtn.className = "rail-btn rail-action";
   newBtn.textContent = "+";
   newBtn.title = "New chat";
   newBtn.addEventListener("click", createNewChat);
   els.sidebarRail.appendChild(newBtn);
 
+  const settingsRailBtn = document.createElement("button");
+  settingsRailBtn.className = "rail-btn rail-action";
+  settingsRailBtn.textContent = "⚙";
+  settingsRailBtn.title = "Settings";
+  settingsRailBtn.addEventListener("click", () => toggleSettingsSheet(true));
+  els.sidebarRail.appendChild(settingsRailBtn);
+
   state.chats.slice(0, 8).forEach((chat) => {
     const b = document.createElement("button");
     b.className = `rail-btn ${chat.id === state.activeChatId ? "active" : ""}`;
     b.title = chat.title;
-    paintIdenticon(b, chat.id, 42, 12);
+    paintIdenticon(b, chat.id, 48, 14);
     b.addEventListener("click", () => switchChat(chat.id));
     els.sidebarRail.appendChild(b);
   });
@@ -267,7 +294,7 @@ function renderChats() {
 
     const icon = document.createElement("div");
     icon.className = "chat-identicon";
-    paintIdenticon(icon, chat.id, 28, 8);
+    paintIdenticon(icon, chat.id, 30, 8);
 
     const text = document.createElement("div");
     text.innerHTML = `<strong>${chat.title}</strong><br /><small>${chat.subtitle}</small>`;
@@ -365,10 +392,18 @@ async function sha256Bytes(text) {
 
 async function identiconSvg(seed, size = 42, radius = 10) {
   const bytes = await sha256Bytes(seed);
-  const hue = bytes[0] % 360;
-  const hue2 = (hue + 90 + (bytes[1] % 80)) % 360;
-  const bg = `hsl(${hue2} 38% 14%)`;
-  const fg = `hsl(${hue} 75% 58%)`;
+
+  const mutedPalette = [
+    ["#8ea2b5", "#1b2230"],
+    ["#9cabbe", "#1a2333"],
+    ["#8e9fb0", "#202735"],
+    ["#a3b1c0", "#1c2431"],
+    ["#8c9caf", "#1a2130"],
+  ];
+
+  const pair = mutedPalette[bytes[0] % mutedPalette.length];
+  const fg = pair[0];
+  const bg = pair[1];
 
   const n = 5;
   const pad = Math.max(2, Math.floor(size * 0.12));
@@ -385,9 +420,9 @@ async function identiconSvg(seed, size = 42, radius = 10) {
       const x1 = pad + x * cell;
       const xm = pad + (n - 1 - x) * cell;
       const y1 = pad + y * cell;
-      rects += `<rect x="${x1}" y="${y1}" width="${cell}" height="${cell}" fill="${fg}" rx="2"/>`;
+      rects += `<rect x="${x1}" y="${y1}" width="${cell}" height="${cell}" fill="${fg}" rx="1"/>`;
       if (xm !== x1) {
-        rects += `<rect x="${xm}" y="${y1}" width="${cell}" height="${cell}" fill="${fg}" rx="2"/>`;
+        rects += `<rect x="${xm}" y="${y1}" width="${cell}" height="${cell}" fill="${fg}" rx="1"/>`;
       }
     }
   }

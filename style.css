@@ -213,6 +213,12 @@ body { min-height: 100dvh; }
   gap: 8px;
 }
 
+.drawer-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 #drawerCompactBtn {
   display: none;
 }
@@ -222,9 +228,9 @@ body { min-height: 100dvh; }
 }
 
 .rail-btn {
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
   border: 1px solid #2a345f;
   background: #151f44;
   color: #eef2ff;
@@ -233,9 +239,14 @@ body { min-height: 100dvh; }
   background-position: center;
 }
 
+.rail-btn.rail-action {
+  font-size: 20px;
+  background-image: none !important;
+}
+
 .rail-btn.active {
-  border-color: #5d78ff;
-  background: #223886;
+  border-color: #6c83d7;
+  box-shadow: inset 0 0 0 1px #4c62ad;
 }
 
 .drawer-section {
@@ -262,14 +273,41 @@ body { min-height: 100dvh; }
 }
 
 .secondary.mini {
-  height: 30px;
-  min-width: 30px;
-  border-radius: 8px;
-  padding: 0 8px;
+  height: 42px;
+  min-width: 42px;
+  border-radius: 12px;
+  padding: 0;
+  font-size: 22px;
+  line-height: 1;
 }
 
-#chatSearchInput {
+.chat-search-wrap {
+  position: relative;
   margin-bottom: 8px;
+}
+
+.chat-search-wrap input {
+  padding-right: 40px;
+}
+
+.chat-search-clear {
+  position: absolute;
+  right: 7px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid #3a4a84;
+  background: #1b2a57;
+  color: #eaf0ff;
+  display: none;
+}
+
+.chat-search-wrap.has-text .chat-search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .chat-list {
@@ -294,13 +332,13 @@ body { min-height: 100dvh; }
 }
 
 .chat-identicon {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: 8px;
-  border: 1px solid #2e3a68;
+  border: 1px solid #3a4666;
   background-size: cover;
   background-position: center;
-  background-color: #0f1630;
+  background-color: #121826;
 }
 
 .chat-item.active {
@@ -492,8 +530,14 @@ input[type="text"] {
     justify-content: center;
   }
 
+  .app-shell.sidebar-collapsed #settingsBtn {
+    display: none;
+  }
+
   .app-shell.sidebar-collapsed #drawerCompactBtn {
-    width: 42px;
+    width: 48px;
+    min-width: 48px;
+    height: 48px;
   }
 
   .app-shell.sidebar-collapsed .sidebar-rail {
