@@ -38,9 +38,28 @@ From the **Settings** button (⚙):
 
 UI Demo mode is default so UX flow can be reviewed without model runtime dependency (simulated bot replies + simulated TPS values).
 
+## Local llama.cpp quick start
+
+This repo includes a helper script to run **official `llama-server`** on `127.0.0.1:18080` (the default Steve Chat runtime endpoint):
+
+```bash
+./scripts/llama_cpp_local.sh list-models
+./scripts/llama_cpp_local.sh start --index 1
+```
+
+Switch model (example E2B → E4B):
+
+```bash
+./scripts/llama_cpp_local.sh restart --index 2
+```
+
+Then in Steve Chat Settings, tap **Connect local llama.cpp** to set endpoint + detect models.
+
+Detailed guide: `docs/PHASE2-LLAMA-CPP-SETUP.md`
+
 ## Next iteration ideas
 
-- streaming tokens
-- persistent multi-chat history (IndexedDB)
-- STT/TTS voice controls
+- background endpoint health monitor + reconnect UX
+- chat export/import
+- model profile presets (ctx, temp, max tokens)
 - avatar/theme customization ("Steve" personality presets)
