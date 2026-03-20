@@ -1,6 +1,8 @@
 import { getDomRefs } from "./dom.js";
 import { IdenticonService } from "./services/identicon-service.js";
 import { GestureService } from "./services/gesture-service.js";
+import { RuntimeClient } from "./services/runtime-client.js";
+import { StorageService } from "./services/storage-service.js";
 
 const WIDE_QUERY = "(min-width: 700px)";
 const ARCHIVE_ICON_SVG = '<svg class="archive-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16"/><rect x="5" y="6" width="14" height="13" rx="2"/><path d="M9 11h6"/><path d="M9 14h6"/></svg>';
@@ -9,7 +11,12 @@ export class SteveChatApp {
   constructor() {
     this.els = getDomRefs();
     this.identicons = new IdenticonService();
-    this.state = this.createInitialState();
+    this.runtimeClient = new RuntimeClient();
+    this.storage = new StorageService("steve.state.v2");
+    this.persistTimer = null;
+    this.recognition = null;
+
+    this.state = this.storage.load(this.createInitialState());
   }
 
   createInitialState() {
@@ -24,6 +31,10 @@ export class SteveChatApp {
       activeChatId: "steve",
       selectedModel: localStorage.getItem("steve.model") || "gemma-3n-e4b",
       chatFilter: "",
+      streamMode: true,
+      ttsEnabled: false,
+      runtimeState: "idle",
+      runtimeStatusText: "Runtime ready.",
       models: [
         { id: "gemma-3n-e4b", name: "Gemma 3N E4B" },
         { id: "gemma-3n-e2b", name: "Gemma 3N E2B" },
@@ -49,11 +60,26 @@ export class SteveChatApp {
 
   init() {
     this.els.baseUrlInput.value = this.state.baseUrl;
+    this.els.streamModeToggle.checked = Boolean(this.state.streamMode);
+    this.els.ttsToggle.checked = Boolean(this.state.ttsEnabled);
     this.applyTheme();
     this.bindEvents();
     this.bindViewportFixes();
     this.syncViewport();
     this.renderAll();
+  }
+
+  schedulePersist() {
+    clearTimeout(this.persistTimer);
+    this.persistTimer = setTimeout(() => {
+      this.storage.save(this.state);
+    }, 80);
+  }
+
+  setRuntimeState(kind, text) {
+    this.state.runtimeState = kind;
+    if (text) this.state.runtimeStatusText = text;
+    this.renderModeUi();
   }
 
   bindEvents() {
@@ -77,6 +103,7 @@ export class SteveChatApp {
       this.state.chatFilter = (e.target.value || "").toLowerCase().trim();
       this.renderChatSearchState();
       this.renderChats();
+      this.schedulePersist();
     });
 
     this.els.clearChatSearchBtn.addEventListener("click", () => this.clearChatSearch());
@@ -88,6 +115,16 @@ export class SteveChatApp {
 
     this.els.mockModeBtn.addEventListener("click", () => this.setMode(false));
     this.els.runtimeModeBtn.addEventListener("click", () => this.setMode(true));
+    this.els.streamModeToggle.addEventListener("change", (e) => {
+      this.state.streamMode = Boolean(e.target.checked);
+      this.setRuntimeState("idle", this.state.streamMode ? "Streaming enabled." : "Streaming disabled.");
+      this.schedulePersist();
+    });
+    this.els.ttsToggle.addEventListener("change", (e) => {
+      this.state.ttsEnabled = Boolean(e.target.checked);
+      this.setRuntimeState("idle", this.state.ttsEnabled ? "Text-to-speech enabled." : "Text-to-speech disabled.");
+      this.schedulePersist();
+    });
 
     this.els.sendBtn.addEventListener("click", () => this.onSend());
     this.els.messageInput.addEventListener("keydown", (e) => {
@@ -98,7 +135,7 @@ export class SteveChatApp {
       this.els.modeHint.textContent = "Attachment/actions menu hook (non-modal).";
     });
 
-    this.els.micBtn.addEventListener("click", () => this.toggleMockMic());
+    this.els.micBtn.addEventListener("click", () => this.toggleSpeechInput());
 
     this.els.messageInput.addEventListener("focus", () => {
       window.setTimeout(() => this.ensureComposerVisible(), 120);
@@ -129,6 +166,7 @@ export class SteveChatApp {
     this.state.theme = this.state.theme === "light" ? "dark" : "light";
     localStorage.setItem("steve.theme", this.state.theme);
     this.applyTheme();
+    this.schedulePersist();
   }
 
   applySidebarLayoutState() {
@@ -146,6 +184,7 @@ export class SteveChatApp {
     localStorage.setItem("steve.sidebarCollapsed", this.state.sidebarCollapsed ? "1" : "0");
     this.applySidebarLayoutState();
     this.renderSidebarRail();
+    this.schedulePersist();
   }
 
   syncViewport() {
@@ -242,6 +281,7 @@ export class SteveChatApp {
     this.renderSidebarRail();
     this.renderMessages();
     this.renderReplyBanner();
+    this.schedulePersist();
   }
 
   getVisibleChats() {
@@ -259,6 +299,7 @@ export class SteveChatApp {
     this.renderChatSearchState();
     this.renderChats();
     this.els.chatSearchInput.focus();
+    this.schedulePersist();
   }
 
   createNewChat() {
@@ -279,6 +320,7 @@ export class SteveChatApp {
     this.renderChats();
     this.renderSidebarRail();
     this.renderMessages();
+    this.schedulePersist();
   }
 
   switchChat(chatId) {
@@ -288,6 +330,7 @@ export class SteveChatApp {
     this.renderMessages();
     this.renderReplyBanner();
     this.toggleDrawer(false);
+    this.schedulePersist();
   }
 
   ensureActiveChatVisible() {
@@ -417,6 +460,7 @@ export class SteveChatApp {
     this.renderChats();
     this.renderSidebarRail();
     this.renderMessages();
+    this.schedulePersist();
   }
 
   toggleArchiveChat(chatId) {
@@ -431,6 +475,7 @@ export class SteveChatApp {
     this.renderChats();
     this.renderSidebarRail();
     this.renderMessages();
+    this.schedulePersist();
   }
 
   setReplyTarget(messageIndex, msg) {
@@ -441,11 +486,13 @@ export class SteveChatApp {
       role: msg.role,
     };
     this.renderReplyBanner();
+    this.schedulePersist();
   }
 
   clearReplyTarget() {
     this.state.replyTarget = null;
     this.renderReplyBanner();
+    this.schedulePersist();
   }
 
   renderReplyBanner() {
@@ -475,6 +522,8 @@ export class SteveChatApp {
 
       const bubble = document.createElement("div");
       bubble.className = "bubble";
+      if (msg.pending) bubble.classList.add("pending");
+      if (msg.error) bubble.classList.add("error");
 
       if (msg.replyTo?.text) {
         const reply = document.createElement("div");
@@ -551,49 +600,101 @@ export class SteveChatApp {
   setMode(live) {
     this.state.liveMode = live;
     localStorage.setItem("steve.liveMode", this.state.liveMode ? "1" : "0");
-    this.renderModeUi();
+    this.setRuntimeState("idle", this.state.liveMode ? "Live runtime ready." : "UI Demo mode active.");
+    this.schedulePersist();
   }
 
   renderModeUi() {
     this.els.mockModeBtn.classList.toggle("active", !this.state.liveMode);
     this.els.runtimeModeBtn.classList.toggle("active", this.state.liveMode);
+    this.els.streamModeToggle.checked = Boolean(this.state.streamMode);
+    this.els.ttsToggle.checked = Boolean(this.state.ttsEnabled);
+
     this.els.modeHint.textContent = this.state.liveMode
-      ? "Local Runtime mode sends prompts to your selected /v1/chat/completions model endpoint."
+      ? "Local Runtime mode sends prompts with chat history to /v1/chat/completions."
       : "UI Demo mode uses mock Steve replies for flow testing.";
 
+    this.els.runtimeStatus.textContent = this.state.runtimeStatusText || "Runtime: idle.";
+
     if (this.els.statusDot) {
-      this.els.statusDot.style.background = this.state.liveMode ? "#3ad06b" : "#6d7cb4";
+      if (!this.state.liveMode) {
+        this.els.statusDot.style.background = "#6d7cb4";
+      } else if (this.state.runtimeState === "working") {
+        this.els.statusDot.style.background = "#f0b846";
+      } else if (this.state.runtimeState === "error") {
+        this.els.statusDot.style.background = "#e15f5f";
+      } else {
+        this.els.statusDot.style.background = "#3ad06b";
+      }
     }
   }
 
-  toggleMockMic() {
-    this.state.mockMicOn = !this.state.mockMicOn;
-    this.els.micBtn.classList.toggle("active", this.state.mockMicOn);
-    this.els.micBtn.setAttribute("aria-pressed", String(this.state.mockMicOn));
-    this.els.modeHint.textContent = this.state.mockMicOn
-      ? "Mock mic armed (wireframe only)."
-      : this.state.liveMode
-        ? "Local Runtime mode sends prompts to your selected /v1/chat/completions model endpoint."
-        : "UI Demo mode uses mock Steve replies for flow testing.";
+  toggleSpeechInput() {
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Recognition) {
+      this.setRuntimeState("error", "Speech recognition is not available in this browser.");
+      return;
+    }
+
+    if (this.recognition) {
+      this.recognition.stop();
+      return;
+    }
+
+    const recognizer = new Recognition();
+    recognizer.lang = "en-US";
+    recognizer.continuous = false;
+    recognizer.interimResults = true;
+
+    this.recognition = recognizer;
+    this.state.mockMicOn = true;
+    this.els.micBtn.classList.add("active");
+    this.els.micBtn.setAttribute("aria-pressed", "true");
+    this.setRuntimeState("working", "Listening… speak your prompt.");
+
+    recognizer.onresult = (event) => {
+      let finalText = "";
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        const seg = event.results[i][0]?.transcript || "";
+        if (event.results[i].isFinal) finalText += seg;
+        else interim += seg;
+      }
+      const nextValue = (finalText || interim || "").trim();
+      if (nextValue) this.els.messageInput.value = nextValue;
+    };
+
+    recognizer.onerror = (event) => {
+      this.setRuntimeState("error", `Speech input error: ${event.error || "unknown"}`);
+    };
+
+    recognizer.onend = () => {
+      this.recognition = null;
+      this.state.mockMicOn = false;
+      this.els.micBtn.classList.remove("active");
+      this.els.micBtn.setAttribute("aria-pressed", "false");
+      if (this.state.liveMode) {
+        this.setRuntimeState("idle", "Live runtime ready.");
+      } else {
+        this.setRuntimeState("idle", "UI Demo mode active.");
+      }
+      this.els.messageInput.focus();
+    };
+
+    recognizer.start();
   }
 
   saveBaseUrl() {
     this.state.baseUrl = (this.els.baseUrlInput.value || "").trim().replace(/\/$/, "");
     localStorage.setItem("steve.baseUrl", this.state.baseUrl);
-    this.els.modeHint.textContent = `Endpoint saved: ${this.state.baseUrl}`;
+    this.setRuntimeState("idle", `Endpoint saved: ${this.state.baseUrl}`);
+    this.schedulePersist();
   }
 
   async detectModels() {
     this.saveBaseUrl();
     try {
-      const res = await fetch(`${this.state.baseUrl}/v1/models`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-      const data = await res.json();
-      const listed = (data?.data || [])
-        .map((m) => ({ id: String(m.id), name: this.shortName(String(m.id)) }))
-        .filter((m) => m.id);
-
+      const listed = await this.runtimeClient.fetchModels(this.state.baseUrl);
       if (!listed.length) throw new Error("No models returned");
 
       this.state.models = listed;
@@ -604,9 +705,10 @@ export class SteveChatApp {
 
       this.renderModels();
       this.syncModelLabel();
-      this.els.modeHint.textContent = `Detected ${listed.length} model(s).`;
+      this.setRuntimeState("ok", `Detected ${listed.length} model(s).`);
+      this.schedulePersist();
     } catch (err) {
-      this.els.modeHint.textContent = `Detect failed: ${err.message}`;
+      this.setRuntimeState("error", `Detect failed: ${err.message}`);
     }
   }
 
@@ -633,12 +735,64 @@ export class SteveChatApp {
     return base + textCost + tpsCost + noise;
   }
 
-  appendMessage(role, text, options = {}) {
-    if (!this.state.messages[this.state.activeChatId]) {
-      this.state.messages[this.state.activeChatId] = [];
+  appendMessage(role, text, options = {}, chatId = this.state.activeChatId) {
+    if (!this.state.messages[chatId]) {
+      this.state.messages[chatId] = [];
     }
-    this.state.messages[this.state.activeChatId].push({ role, text, ...options });
-    this.renderMessages();
+    const entry = { role, text, ...options };
+    this.state.messages[chatId].push(entry);
+    const index = this.state.messages[chatId].length - 1;
+
+    if (chatId === this.state.activeChatId) this.renderMessages();
+    this.schedulePersist();
+    return index;
+  }
+
+  patchMessage(chatId, index, patch) {
+    const list = this.state.messages[chatId] || [];
+    if (!list[index]) return;
+
+    if (typeof patch === "function") {
+      patch(list[index]);
+    } else {
+      Object.assign(list[index], patch);
+    }
+
+    if (chatId === this.state.activeChatId) this.renderMessages();
+    this.schedulePersist();
+  }
+
+  buildRuntimeMessages(chatId = this.state.activeChatId) {
+    const raw = this.state.messages[chatId] || [];
+    const mapped = raw
+      .filter((m) => m.role === "user" || m.role === "steve")
+      .map((m) => ({
+        role: m.role === "steve" ? "assistant" : "user",
+        content: m.text || "",
+      }))
+      .filter((m) => m.content.trim().length > 0);
+
+    return mapped.slice(-24);
+  }
+
+  speakText(text) {
+    if (!this.state.ttsEnabled) return;
+    if (!("speechSynthesis" in window)) {
+      this.setRuntimeState("error", "Speech synthesis is unavailable in this browser.");
+      return;
+    }
+
+    try {
+      const clean = (text || "").trim();
+      if (!clean) return;
+      window.speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(clean);
+      utter.rate = 1;
+      utter.pitch = 1;
+      window.speechSynthesis.speak(utter);
+    } catch {
+      this.setRuntimeState("error", "Unable to play speech output.");
+    }
   }
 
   mockReplyForChat(chatId, userText) {
@@ -675,15 +829,16 @@ export class SteveChatApp {
 
     this.els.messageInput.value = "";
 
-    const replyTo = this.state.replyTarget?.chatId === this.state.activeChatId
+    const chatId = this.state.activeChatId;
+    const replyTo = this.state.replyTarget?.chatId === chatId
       ? { role: this.state.replyTarget.role, text: this.state.replyTarget.text }
       : null;
 
-    this.appendMessage("user", text, replyTo ? { replyTo } : {});
+    this.appendMessage("user", text, replyTo ? { replyTo } : {}, chatId);
     this.clearReplyTarget();
 
     if (this.state.liveMode) {
-      await this.sendLive(text);
+      await this.sendLive(text, chatId);
       return;
     }
 
@@ -691,45 +846,81 @@ export class SteveChatApp {
     const simTps = 9 + Math.random() * 22;
 
     window.setTimeout(() => {
-      this.appendMessage("steve", this.mockReplyForChat(this.state.activeChatId, text), {
+      this.appendMessage("steve", this.mockReplyForChat(chatId, text), {
         tps: simTps,
         tpsMode: "SIM TPS",
         energyMw: this.estimateDummyEnergyMw({ text, tps: simTps, live: false }),
-      });
+      }, chatId);
+      this.setRuntimeState("idle", "UI Demo response generated.");
     }, delayMs);
   }
 
-  async sendLive(text) {
+  async sendLive(text, chatId = this.state.activeChatId) {
+    this.setRuntimeState("working", this.state.streamMode ? "Streaming response…" : "Waiting for live response…");
+
+    const assistantIndex = this.appendMessage("steve", "", { pending: true }, chatId);
+    const messages = this.buildRuntimeMessages(chatId);
+
     try {
-      const res = await fetch(`${this.state.baseUrl}/v1/chat/completions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      if (this.state.streamMode) {
+        let streamedText = "";
+        const result = await this.runtimeClient.streamChat({
+          baseUrl: this.state.baseUrl,
           model: this.state.selectedModel,
-          messages: [{ role: "user", content: text }],
-          max_tokens: 120,
-          temperature: 0.4,
-        }),
+          messages,
+          onToken: (token) => {
+            streamedText += token;
+            this.patchMessage(chatId, assistantIndex, {
+              text: streamedText,
+              pending: true,
+              error: false,
+            });
+          },
+        });
+
+        if (!streamedText.trim()) {
+          streamedText = "(empty reply)";
+        }
+
+        this.patchMessage(chatId, assistantIndex, {
+          text: streamedText,
+          pending: false,
+          error: false,
+          tps: result?.tps ?? null,
+          tpsMode: "LIVE TPS",
+          energyMw: this.estimateDummyEnergyMw({ text, tps: result?.tps, live: true }),
+        });
+
+        this.speakText(streamedText);
+        this.setRuntimeState("ok", "Live stream complete.");
+        return;
+      }
+
+      const oneShot = await this.runtimeClient.completeOnce({
+        baseUrl: this.state.baseUrl,
+        model: this.state.selectedModel,
+        messages,
+        maxTokens: 300,
+        temperature: 0.4,
       });
 
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const reply = data?.choices?.[0]?.message?.content?.trim() || "(empty reply)";
-      const tps = data?.timings?.predicted_per_second ?? data?.usage?.tokens_per_second ?? null;
-
-      this.appendMessage("steve", reply, {
-        tps,
+      this.patchMessage(chatId, assistantIndex, {
+        text: oneShot.reply,
+        pending: false,
+        error: false,
+        tps: oneShot.tps ?? null,
         tpsMode: "LIVE TPS",
-        energyMw: this.estimateDummyEnergyMw({ text, tps, live: true }),
+        energyMw: this.estimateDummyEnergyMw({ text, tps: oneShot.tps, live: true }),
       });
+      this.speakText(oneShot.reply);
+      this.setRuntimeState("ok", "Live response complete.");
     } catch (err) {
-      const simTps = 8 + Math.random() * 20;
-      this.appendMessage("steve", `Live call failed: ${err.message}`);
-      this.appendMessage("steve", `[Simulated fallback] ${this.mockReplyForChat(this.state.activeChatId, text)}`, {
-        tps: simTps,
-        tpsMode: "SIM TPS",
-        energyMw: this.estimateDummyEnergyMw({ text, tps: simTps, live: false }),
+      this.patchMessage(chatId, assistantIndex, {
+        text: `Live call failed: ${err.message}`,
+        pending: false,
+        error: true,
       });
+      this.setRuntimeState("error", `Live call failed: ${err.message}`);
     }
   }
 }
