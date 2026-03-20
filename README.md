@@ -11,6 +11,7 @@ Mobile-first local chat UI prototype inspired by Allan's sketch (hamburger menu,
   - model picker sheet
   - message composer + mock Steve replies
   - optional live wire-up to local OpenAI-compatible endpoint (`/v1/models`, `/v1/chat/completions`)
+  - foldable/wide layout: persistent left chat drawer + right chat pane
 
 ## Run locally
 

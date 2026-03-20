@@ -4,6 +4,7 @@ const state = {
   mockMicOn: false,
   activeChatId: "steve",
   selectedModel: localStorage.getItem("steve.model") || "gemma-3n-e4b",
+  chatFilter: "",
   models: [
     { id: "gemma-3n-e4b", name: "Gemma 3N E4B" },
     { id: "gemma-3n-e2b", name: "Gemma 3N E2B" },
@@ -11,6 +12,11 @@ const state = {
   chats: [
     { id: "steve", title: "Steve", subtitle: "Main thread" },
     { id: "ops", title: "Ops Notes", subtitle: "Build + test" },
+    { id: "ideas", title: "Feature Ideas", subtitle: "Voice + gestures" },
+    { id: "bugs", title: "Bug Triage", subtitle: "Keyboard / viewport" },
+    { id: "models", title: "Model Bench", subtitle: "E2B vs E4B" },
+    { id: "ui", title: "UI Polish", subtitle: "Fold + portrait" },
+    { id: "roadmap", title: "Roadmap", subtitle: "Phase checklist" },
   ],
   messages: {
     steve: [
@@ -27,6 +33,8 @@ const els = {
   backdrop: $("backdrop"),
   messages: $("messages"),
   chatList: $("chatList"),
+  chatSearchInput: $("chatSearchInput"),
+  newChatBtn: $("newChatBtn"),
   modelList: $("modelList"),
   modelSheet: $("modelSheet"),
   currentModelLabel: $("currentModelLabel"),
@@ -61,6 +69,13 @@ function bindEvents() {
 
   $("saveBaseUrlBtn").addEventListener("click", saveBaseUrl);
   $("detectModelsBtn").addEventListener("click", detectModels);
+
+  els.chatSearchInput.addEventListener("input", (e) => {
+    state.chatFilter = (e.target.value || "").toLowerCase().trim();
+    renderChats();
+  });
+
+  els.newChatBtn.addEventListener("click", createNewChat);
 
   els.mockModeBtn.addEventListener("click", () => setMode(false));
   els.runtimeModeBtn.addEventListener("click", () => setMode(true));
@@ -98,6 +113,11 @@ function syncViewport() {
 
   document.documentElement.style.setProperty("--app-height", `${Math.round(height)}px`);
   document.documentElement.style.setProperty("--vv-top", `${Math.round(top)}px`);
+
+  if (window.matchMedia("(min-width: 860px)").matches) {
+    els.drawer.classList.add("open");
+  }
+  syncBackdrop();
 }
 
 function ensureComposerVisible() {
@@ -105,7 +125,12 @@ function ensureComposerVisible() {
 }
 
 function toggleDrawer(open) {
-  els.drawer.classList.toggle("open", open);
+  const wide = window.matchMedia("(min-width: 860px)").matches;
+  if (wide) {
+    els.drawer.classList.add("open");
+  } else {
+    els.drawer.classList.toggle("open", open);
+  }
   syncBackdrop();
 }
 
@@ -115,7 +140,8 @@ function toggleModelSheet(open) {
 }
 
 function syncBackdrop() {
-  const show = els.drawer.classList.contains("open") || els.modelSheet.classList.contains("show");
+  const wide = window.matchMedia("(min-width: 860px)").matches;
+  const show = !wide && (els.drawer.classList.contains("open") || els.modelSheet.classList.contains("show"));
   els.backdrop.classList.toggle("show", show);
 }
 
@@ -127,9 +153,33 @@ function renderAll() {
   renderModeUi();
 }
 
+function createNewChat() {
+  const id = `chat-${Date.now()}`;
+  const title = `New chat ${state.chats.length - 1}`;
+  state.chats.unshift({ id, title, subtitle: "Just now" });
+  state.messages[id] = [{ role: "steve", text: "New thread ready." }];
+  state.activeChatId = id;
+  state.chatFilter = "";
+  if (els.chatSearchInput) els.chatSearchInput.value = "";
+  renderChats();
+  renderMessages();
+}
+
 function renderChats() {
   els.chatList.innerHTML = "";
-  state.chats.forEach((chat) => {
+  const items = state.chatFilter
+    ? state.chats.filter((c) => `${c.title} ${c.subtitle}`.toLowerCase().includes(state.chatFilter))
+    : state.chats;
+
+  if (!items.length) {
+    const empty = document.createElement("div");
+    empty.className = "chat-item";
+    empty.textContent = "No chats match your search.";
+    els.chatList.appendChild(empty);
+    return;
+  }
+
+  items.forEach((chat) => {
     const div = document.createElement("div");
     div.className = `chat-item ${chat.id === state.activeChatId ? "active" : ""}`;
     div.innerHTML = `<strong>${chat.title}</strong><br /><small>${chat.subtitle}</small>`;
