@@ -591,6 +591,10 @@ input[type="text"] {
   grid-column: 1 / -1;
 }
 
+.backend-row .mode-btn {
+  font-size: 13px;
+}
+
 #connectLocalLlamaBtn.active {
   border-color: #67c886;
   background: #1f5635;

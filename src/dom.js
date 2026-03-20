@@ -24,6 +24,8 @@ export function getDomRefs() {
     baseUrlInput: $("baseUrlInput"),
     modeHint: $("modeHint"),
     runtimeStatus: $("runtimeStatus"),
+    backendRegularBtn: $("backendRegularBtn"),
+    backendQvacBtn: $("backendQvacBtn"),
     mockModeBtn: $("mockModeBtn"),
     runtimeModeBtn: $("runtimeModeBtn"),
     streamModeToggle: $("streamModeToggle"),

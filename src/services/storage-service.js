@@ -31,6 +31,7 @@ export class StorageService {
 
   save(state) {
     const snapshot = {
+      backend: state.backend,
       baseUrl: state.baseUrl,
       liveMode: state.liveMode,
       sidebarCollapsed: state.sidebarCollapsed,
@@ -55,6 +56,7 @@ export class StorageService {
   pickScalars(data) {
     const out = {};
     const keys = [
+      "backend",
       "baseUrl",
       "liveMode",
       "sidebarCollapsed",

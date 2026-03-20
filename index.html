@@ -110,7 +110,11 @@
             <button id="detectModelsBtn" class="secondary">Detect</button>
           </div>
           <div class="drawer-row">
-            <button id="connectLocalLlamaBtn" class="secondary" title="Set endpoint to local llama.cpp and detect models">Connect local llama.cpp</button>
+            <button id="connectLocalLlamaBtn" class="secondary" title="Set endpoint to selected local llama backend and detect models">Connect local llama.cpp</button>
+          </div>
+          <div class="mode-row backend-row">
+            <button id="backendRegularBtn" class="secondary mode-btn active">Regular llama.cpp</button>
+            <button id="backendQvacBtn" class="secondary mode-btn">QVAC fabric llama.cpp</button>
           </div>
           <div class="mode-row">
             <button id="mockModeBtn" class="secondary mode-btn active">UI Demo</button>

@@ -6,6 +6,10 @@ import { StorageService } from "./services/storage-service.js";
 
 const WIDE_QUERY = "(min-width: 700px)";
 const ARCHIVE_ICON_SVG = '<svg class="archive-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16"/><rect x="5" y="6" width="14" height="13" rx="2"/><path d="M9 11h6"/><path d="M9 14h6"/></svg>';
+const BACKEND_ENDPOINTS = {
+  regular: "http://127.0.0.1:18080",
+  qvac: "http://127.0.0.1:18081",
+};
 
 export class SteveChatApp {
   constructor() {
@@ -20,8 +24,12 @@ export class SteveChatApp {
   }
 
   createInitialState() {
+    const backend = localStorage.getItem("steve.backend") || "regular";
+    const baseUrl = localStorage.getItem("steve.baseUrl") || BACKEND_ENDPOINTS[backend] || BACKEND_ENDPOINTS.regular;
+
     return {
-      baseUrl: localStorage.getItem("steve.baseUrl") || "http://127.0.0.1:18080",
+      backend,
+      baseUrl,
       liveMode: localStorage.getItem("steve.liveMode") === "1",
       sidebarCollapsed: localStorage.getItem("steve.sidebarCollapsed") === "1",
       theme: localStorage.getItem("steve.theme") || "dark",
@@ -60,6 +68,10 @@ export class SteveChatApp {
   }
 
   init() {
+    if (!BACKEND_ENDPOINTS[this.state.backend]) {
+      this.state.backend = "regular";
+    }
+
     this.els.baseUrlInput.value = this.state.baseUrl;
     this.els.streamModeToggle.checked = Boolean(this.state.streamMode);
     this.els.ttsToggle.checked = Boolean(this.state.ttsEnabled);
@@ -68,6 +80,28 @@ export class SteveChatApp {
     this.bindViewportFixes();
     this.syncViewport();
     this.renderAll();
+  }
+
+  getBackendEndpoint() {
+    return BACKEND_ENDPOINTS[this.state.backend] || BACKEND_ENDPOINTS.regular;
+  }
+
+  getBackendLabel() {
+    return this.state.backend === "qvac" ? "qvac llama.cpp" : "llama.cpp";
+  }
+
+  setBackend(backend) {
+    if (!BACKEND_ENDPOINTS[backend]) return;
+    this.state.backend = backend;
+    localStorage.setItem("steve.backend", backend);
+    this.state.baseUrl = this.getBackendEndpoint();
+    this.els.baseUrlInput.value = this.state.baseUrl;
+    localStorage.setItem("steve.baseUrl", this.state.baseUrl);
+    this.state.localLlamaConnected = false;
+    this.renderBackendUi();
+    this.renderLocalLlamaButton();
+    this.setRuntimeState("idle", `Selected backend: ${backend}. Endpoint set to ${this.state.baseUrl}`);
+    this.schedulePersist();
   }
 
   schedulePersist() {
@@ -114,6 +148,9 @@ export class SteveChatApp {
     this.els.drawerCompactBtn.addEventListener("click", () => this.toggleSidebarCollapsed());
     this.els.clearReplyBtn.addEventListener("click", () => this.clearReplyTarget());
     this.els.themeToggleBtn.addEventListener("click", () => this.toggleTheme());
+
+    this.els.backendRegularBtn.addEventListener("click", () => this.setBackend("regular"));
+    this.els.backendQvacBtn.addEventListener("click", () => this.setBackend("qvac"));
 
     this.els.mockModeBtn.addEventListener("click", () => this.setMode(false));
     this.els.runtimeModeBtn.addEventListener("click", () => this.setMode(true));
@@ -251,6 +288,7 @@ export class SteveChatApp {
     this.renderReplyBanner();
     this.renderModels();
     this.syncModelLabel();
+    this.renderBackendUi();
     this.renderModeUi();
     this.renderLocalLlamaButton();
   }
@@ -607,6 +645,11 @@ export class SteveChatApp {
     this.schedulePersist();
   }
 
+  renderBackendUi() {
+    this.els.backendRegularBtn.classList.toggle("active", this.state.backend === "regular");
+    this.els.backendQvacBtn.classList.toggle("active", this.state.backend === "qvac");
+  }
+
   renderModeUi() {
     this.els.mockModeBtn.classList.toggle("active", !this.state.liveMode);
     this.els.runtimeModeBtn.classList.toggle("active", this.state.liveMode);
@@ -631,13 +674,15 @@ export class SteveChatApp {
       }
     }
 
+    this.renderBackendUi();
     this.renderLocalLlamaButton();
   }
 
   renderLocalLlamaButton() {
     const connected = Boolean(this.state.localLlamaConnected);
+    const label = this.state.backend === "qvac" ? "local qvac llama.cpp" : "local llama.cpp";
     this.els.connectLocalLlamaBtn.classList.toggle("active", connected);
-    this.els.connectLocalLlamaBtn.textContent = connected ? "Connected local llama.cpp" : "Connect local llama.cpp";
+    this.els.connectLocalLlamaBtn.textContent = connected ? `Connected ${label}` : `Connect ${label}`;
   }
 
   toggleSpeechInput() {
@@ -696,11 +741,11 @@ export class SteveChatApp {
   }
 
   async connectLocalLlama() {
-    this.els.baseUrlInput.value = "http://127.0.0.1:18080";
+    this.els.baseUrlInput.value = this.getBackendEndpoint();
     this.saveBaseUrl();
     this.state.localLlamaConnected = false;
     this.renderLocalLlamaButton();
-    this.setRuntimeState("working", "Connecting to local llama.cpp endpoint...");
+    this.setRuntimeState("working", `Connecting to ${this.getBackendLabel()} endpoint...`);
     await this.detectModels();
   }
 
@@ -708,8 +753,8 @@ export class SteveChatApp {
     this.state.baseUrl = (this.els.baseUrlInput.value || "").trim().replace(/\/$/, "");
     localStorage.setItem("steve.baseUrl", this.state.baseUrl);
 
-    const isLocalDefault = this.state.baseUrl === "http://127.0.0.1:18080";
-    if (!isLocalDefault) this.state.localLlamaConnected = false;
+    const isSelectedBackendEndpoint = this.state.baseUrl === this.getBackendEndpoint();
+    if (!isSelectedBackendEndpoint) this.state.localLlamaConnected = false;
 
     this.setRuntimeState("idle", `Endpoint saved: ${this.state.baseUrl}`);
     this.schedulePersist();
@@ -730,9 +775,9 @@ export class SteveChatApp {
       this.renderModels();
       this.syncModelLabel();
 
-      const localHit = this.state.baseUrl === "http://127.0.0.1:18080";
+      const localHit = this.state.baseUrl === this.getBackendEndpoint();
       this.state.localLlamaConnected = localHit;
-      this.setRuntimeState("ok", localHit ? "Connected local llama.cpp" : `Detected ${listed.length} model(s).`);
+      this.setRuntimeState("ok", localHit ? `Connected ${this.getBackendLabel()}` : `Detected ${listed.length} model(s).`);
       this.schedulePersist();
     } catch (err) {
       this.state.localLlamaConnected = false;
@@ -908,16 +953,26 @@ export class SteveChatApp {
     try {
       if (this.state.streamMode) {
         let streamedText = "";
+        let chunkCount = 0;
+        let liveTps = null;
+        const startedAt = performance.now();
+
         const result = await this.runtimeClient.streamChat({
           baseUrl: this.state.baseUrl,
           model: this.state.selectedModel,
           messages,
           onToken: (token) => {
             streamedText += token;
+            chunkCount += 1;
+            const elapsedSec = Math.max(0.2, (performance.now() - startedAt) / 1000);
+            liveTps = chunkCount / elapsedSec;
+
             this.patchMessage(chatId, assistantIndex, {
               text: streamedText,
               pending: true,
               error: false,
+              tps: liveTps,
+              tpsMode: "LIVE TPS",
             });
           },
         });
@@ -926,13 +981,14 @@ export class SteveChatApp {
           streamedText = "(empty reply)";
         }
 
+        const finalTps = result?.tps ?? liveTps;
         this.patchMessage(chatId, assistantIndex, {
           text: streamedText,
           pending: false,
           error: false,
-          tps: result?.tps ?? null,
+          tps: finalTps ?? null,
           tpsMode: "LIVE TPS",
-          energyMw: this.estimateDummyEnergyMw({ text, tps: result?.tps, live: true }),
+          energyMw: this.estimateDummyEnergyMw({ text, tps: finalTps, live: true }),
         });
 
         this.speakText(streamedText);
