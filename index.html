@@ -13,6 +13,7 @@
           <h2>Steve Chat</h2>
           <div class="drawer-header-actions">
             <button id="settingsBtn" class="icon-btn" title="Settings">⚙</button>
+            <button id="archivesBtn" class="icon-btn" title="Show archived chats">🗄</button>
             <button id="drawerCompactBtn" class="icon-btn" title="Toggle compact sidebar">◧</button>
             <button id="closeDrawerBtn" class="icon-btn">✕</button>
           </div>
@@ -22,7 +23,7 @@
 
         <section class="drawer-section drawer-chats">
           <div class="drawer-section-head">
-            <h3>All chats</h3>
+            <h3 id="chatListTitle">All chats</h3>
             <button id="newChatBtn" class="secondary mini">＋</button>
           </div>
           <div id="chatSearchWrap" class="chat-search-wrap">
@@ -51,6 +52,11 @@
         </header>
 
         <section id="messages" class="messages"></section>
+
+        <div id="replyBanner" class="reply-banner hidden">
+          <div id="replyBannerText" class="reply-banner-text"></div>
+          <button id="clearReplyBtn" class="reply-banner-clear" title="Cancel reply">✕</button>
+        </div>
 
         <footer class="composer">
           <button id="plusBtn" class="composer-icon">＋</button>

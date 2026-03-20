@@ -2,6 +2,8 @@ const state = {
   baseUrl: localStorage.getItem("steve.baseUrl") || "http://127.0.0.1:18080",
   liveMode: localStorage.getItem("steve.liveMode") === "1",
   sidebarCollapsed: localStorage.getItem("steve.sidebarCollapsed") === "1",
+  showArchived: false,
+  replyTarget: null,
   mockMicOn: false,
   activeChatId: "steve",
   selectedModel: localStorage.getItem("steve.model") || "gemma-3n-e4b",
@@ -11,13 +13,13 @@ const state = {
     { id: "gemma-3n-e2b", name: "Gemma 3N E2B" },
   ],
   chats: [
-    { id: "steve", title: "Steve", subtitle: "Main thread" },
-    { id: "ops", title: "Ops Notes", subtitle: "Build + test" },
-    { id: "ideas", title: "Feature Ideas", subtitle: "Voice + gestures" },
-    { id: "bugs", title: "Bug Triage", subtitle: "Keyboard / viewport" },
-    { id: "models", title: "Model Bench", subtitle: "E2B vs E4B" },
-    { id: "ui", title: "UI Polish", subtitle: "Fold + portrait" },
-    { id: "roadmap", title: "Roadmap", subtitle: "Phase checklist" },
+    { id: "steve", title: "Steve", subtitle: "Main thread", archived: false },
+    { id: "ops", title: "Ops Notes", subtitle: "Build + test", archived: false },
+    { id: "ideas", title: "Feature Ideas", subtitle: "Voice + gestures", archived: false },
+    { id: "bugs", title: "Bug Triage", subtitle: "Keyboard / viewport", archived: false },
+    { id: "models", title: "Model Bench", subtitle: "E2B vs E4B", archived: false },
+    { id: "ui", title: "UI Polish", subtitle: "Fold + portrait", archived: false },
+    { id: "roadmap", title: "Roadmap", subtitle: "Phase checklist", archived: false },
   ],
   messages: {
     steve: [
@@ -38,10 +40,12 @@ const els = {
   backdrop: $("backdrop"),
   messages: $("messages"),
   chatList: $("chatList"),
+  chatListTitle: $("chatListTitle"),
   chatSearchWrap: $("chatSearchWrap"),
   chatSearchInput: $("chatSearchInput"),
   clearChatSearchBtn: $("clearChatSearchBtn"),
   newChatBtn: $("newChatBtn"),
+  archivesBtn: $("archivesBtn"),
   drawerCompactBtn: $("drawerCompactBtn"),
   sidebarRail: $("sidebarRail"),
   modelList: $("modelList"),
@@ -58,6 +62,9 @@ const els = {
   tpsBadge: $("tpsBadge"),
   micBtn: $("micBtn"),
   composer: document.querySelector(".composer"),
+  replyBanner: $("replyBanner"),
+  replyBannerText: $("replyBannerText"),
+  clearReplyBtn: $("clearReplyBtn"),
   closeSettingsBtn: $("closeSettingsBtn"),
 };
 
@@ -96,7 +103,9 @@ function bindEvents() {
   els.clearChatSearchBtn.addEventListener("click", clearChatSearch);
 
   els.newChatBtn.addEventListener("click", createNewChat);
+  els.archivesBtn.addEventListener("click", toggleArchivedView);
   els.drawerCompactBtn.addEventListener("click", toggleSidebarCollapsed);
+  els.clearReplyBtn.addEventListener("click", clearReplyTarget);
 
   els.mockModeBtn.addEventListener("click", () => setMode(false));
   els.runtimeModeBtn.addEventListener("click", () => setMode(true));
@@ -205,10 +214,12 @@ function syncBackdrop() {
 
 function renderAll() {
   applySidebarLayoutState();
+  renderArchiveState();
   renderChatSearchState();
   renderChats();
   renderSidebarRail();
   renderMessages();
+  renderReplyBanner();
   renderModels();
   syncModelLabel();
   renderModeUi();
@@ -217,6 +228,33 @@ function renderAll() {
 function renderChatSearchState() {
   const hasText = (els.chatSearchInput.value || "").trim().length > 0;
   els.chatSearchWrap?.classList.toggle("has-text", hasText);
+}
+
+function renderArchiveState() {
+  els.archivesBtn.classList.toggle("active", state.showArchived);
+  els.archivesBtn.title = state.showArchived ? "Showing archived chats" : "Show archived chats";
+  if (els.chatListTitle) {
+    els.chatListTitle.textContent = state.showArchived ? "Archived" : "All chats";
+  }
+}
+
+function toggleArchivedView() {
+  state.showArchived = !state.showArchived;
+  ensureActiveChatVisible();
+  renderArchiveState();
+  renderChats();
+  renderSidebarRail();
+  renderMessages();
+  renderReplyBanner();
+}
+
+function getVisibleChats() {
+  const filtered = state.showArchived
+    ? state.chats.filter((c) => c.archived)
+    : state.chats.filter((c) => !c.archived);
+
+  if (!state.chatFilter) return filtered;
+  return filtered.filter((c) => `${c.title} ${c.subtitle}`.toLowerCase().includes(state.chatFilter));
 }
 
 function clearChatSearch() {
@@ -230,8 +268,12 @@ function clearChatSearch() {
 function createNewChat() {
   const id = `chat-${Date.now()}`;
   const title = `New chat ${state.chats.length - 1}`;
-  state.chats.unshift({ id, title, subtitle: "Just now" });
+  state.chats.unshift({ id, title, subtitle: "Just now", archived: false });
   state.messages[id] = [{ role: "steve", text: "New thread ready." }];
+  if (state.showArchived) {
+    state.showArchived = false;
+    renderArchiveState();
+  }
   switchChat(id);
   state.chatFilter = "";
   if (els.chatSearchInput) els.chatSearchInput.value = "";
@@ -246,7 +288,24 @@ function switchChat(chatId) {
   renderChats();
   renderSidebarRail();
   renderMessages();
+  renderReplyBanner();
   toggleDrawer(false);
+}
+
+function ensureActiveChatVisible() {
+  const visible = state.showArchived ? state.chats.filter((c) => c.archived) : state.chats.filter((c) => !c.archived);
+  if (!visible.find((c) => c.id === state.activeChatId)) {
+    if (visible[0]) {
+      state.activeChatId = visible[0].id;
+    } else {
+      const id = `chat-${Date.now()}`;
+      state.chats.unshift({ id, title: "New chat", subtitle: "Just now", archived: false });
+      state.messages[id] = [{ role: "steve", text: "New thread ready." }];
+      state.activeChatId = id;
+      state.showArchived = false;
+      renderArchiveState();
+    }
+  }
 }
 
 function renderSidebarRail() {
@@ -267,7 +326,14 @@ function renderSidebarRail() {
   settingsRailBtn.addEventListener("click", () => toggleSettingsSheet(true));
   els.sidebarRail.appendChild(settingsRailBtn);
 
-  state.chats.slice(0, 8).forEach((chat) => {
+  const archiveRailBtn = document.createElement("button");
+  archiveRailBtn.className = `rail-btn rail-action ${state.showArchived ? "active" : ""}`;
+  archiveRailBtn.textContent = "🗄";
+  archiveRailBtn.title = "Archives";
+  archiveRailBtn.addEventListener("click", toggleArchivedView);
+  els.sidebarRail.appendChild(archiveRailBtn);
+
+  getVisibleChats().slice(0, 8).forEach((chat) => {
     const b = document.createElement("button");
     b.className = `rail-btn ${chat.id === state.activeChatId ? "active" : ""}`;
     b.title = chat.title;
@@ -279,14 +345,12 @@ function renderSidebarRail() {
 
 function renderChats() {
   els.chatList.innerHTML = "";
-  const items = state.chatFilter
-    ? state.chats.filter((c) => `${c.title} ${c.subtitle}`.toLowerCase().includes(state.chatFilter))
-    : state.chats;
+  const items = getVisibleChats();
 
   if (!items.length) {
     const empty = document.createElement("div");
     empty.className = "chat-item";
-    empty.textContent = "No chats match your search.";
+    empty.textContent = state.showArchived ? "No archived chats." : "No chats match your search.";
     els.chatList.appendChild(empty);
     return;
   }
@@ -308,16 +372,126 @@ function renderChats() {
     row.appendChild(text);
 
     div.appendChild(row);
-    div.addEventListener("click", () => switchChat(chat.id));
+
+    bindSwipeAction(div, {
+      onLeft: () => deleteChat(chat.id),
+      onRight: () => toggleArchiveChat(chat.id),
+      onTap: () => switchChat(chat.id),
+    });
+
     els.chatList.appendChild(div);
   });
+}
+
+function bindSwipeAction(el, { onLeft, onRight, onTap, threshold = 72 }) {
+  let sx = 0;
+  let dx = 0;
+  let dragging = false;
+  let active = false;
+
+  const start = (e) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    active = true;
+    sx = e.clientX;
+    dx = 0;
+    dragging = false;
+    el.style.transition = "none";
+  };
+
+  const move = (e) => {
+    if (!active) return;
+    dx = e.clientX - sx;
+    if (Math.abs(dx) > 8) {
+      dragging = true;
+      const clamped = Math.max(-96, Math.min(96, dx));
+      el.style.transform = `translateX(${clamped}px)`;
+      el.style.opacity = "0.92";
+    }
+  };
+
+  const end = () => {
+    if (!active) return;
+    active = false;
+    const finalDx = dx;
+    sx = 0;
+    dx = 0;
+
+    el.style.transition = "transform 140ms ease, opacity 140ms ease";
+    el.style.transform = "translateX(0)";
+    el.style.opacity = "1";
+
+    if (dragging && Math.abs(finalDx) >= threshold) {
+      if (finalDx > 0) onRight?.();
+      else onLeft?.();
+      return;
+    }
+
+    if (!dragging) onTap?.();
+  };
+
+  el.addEventListener("pointerdown", start);
+  el.addEventListener("pointermove", move);
+  el.addEventListener("pointerup", end);
+  el.addEventListener("pointercancel", end);
+}
+
+function deleteChat(chatId) {
+  state.chats = state.chats.filter((c) => c.id !== chatId);
+  delete state.messages[chatId];
+  if (state.replyTarget?.chatId === chatId) {
+    clearReplyTarget();
+  }
+  ensureActiveChatVisible();
+  renderChats();
+  renderSidebarRail();
+  renderMessages();
+}
+
+function toggleArchiveChat(chatId) {
+  const chat = state.chats.find((c) => c.id === chatId);
+  if (!chat) return;
+  chat.archived = !chat.archived;
+  if (chat.id === state.activeChatId && chat.archived && !state.showArchived) {
+    ensureActiveChatVisible();
+  }
+  renderChats();
+  renderSidebarRail();
+  renderMessages();
+}
+
+function setReplyTarget(messageIndex, msg) {
+  state.replyTarget = {
+    chatId: state.activeChatId,
+    index: messageIndex,
+    text: msg.text,
+    role: msg.role,
+  };
+  renderReplyBanner();
+}
+
+function clearReplyTarget() {
+  state.replyTarget = null;
+  renderReplyBanner();
+}
+
+function renderReplyBanner() {
+  const t = state.replyTarget;
+  if (!t || t.chatId !== state.activeChatId) {
+    els.replyBanner.classList.add("hidden");
+    els.replyBannerText.textContent = "";
+    return;
+  }
+
+  els.replyBanner.classList.remove("hidden");
+  const snippet = (t.text || "").replace(/\s+/g, " ").slice(0, 80);
+  els.replyBannerText.textContent = `Replying to ${t.role}: ${snippet}`;
 }
 
 function renderMessages() {
   const messages = state.messages[state.activeChatId] || [];
   els.messages.innerHTML = "";
 
-  messages.forEach((msg) => {
+  messages.forEach((msg, idx) => {
     const row = document.createElement("article");
     row.className = `msg-row ${msg.role}`;
 
@@ -327,10 +501,26 @@ function renderMessages() {
 
     const bubble = document.createElement("div");
     bubble.className = "bubble";
-    bubble.textContent = msg.text;
+
+    if (msg.replyTo?.text) {
+      const reply = document.createElement("div");
+      reply.className = "bubble-reply";
+      reply.textContent = `${msg.replyTo.role}: ${msg.replyTo.text}`;
+      bubble.appendChild(reply);
+    }
+
+    const body = document.createElement("div");
+    body.textContent = msg.text;
+    bubble.appendChild(body);
 
     row.appendChild(avatar);
     row.appendChild(bubble);
+
+    bindSwipeAction(row, {
+      onRight: () => setReplyTarget(idx, msg),
+      threshold: 56,
+    });
+
     els.messages.appendChild(row);
   });
 
@@ -499,11 +689,11 @@ function shortName(full) {
   return cleaned.replace(/\.gguf$/i, "");
 }
 
-function appendMessage(role, text) {
+function appendMessage(role, text, options = {}) {
   if (!state.messages[state.activeChatId]) {
     state.messages[state.activeChatId] = [];
   }
-  state.messages[state.activeChatId].push({ role, text });
+  state.messages[state.activeChatId].push({ role, text, ...options });
   renderMessages();
 }
 
@@ -549,7 +739,13 @@ async function onSend() {
   const text = (els.messageInput.value || "").trim();
   if (!text) return;
   els.messageInput.value = "";
-  appendMessage("user", text);
+
+  const replyTo = state.replyTarget?.chatId === state.activeChatId
+    ? { role: state.replyTarget.role, text: state.replyTarget.text }
+    : null;
+
+  appendMessage("user", text, replyTo ? { replyTo } : {});
+  clearReplyTarget();
 
   setTps(null);
 
