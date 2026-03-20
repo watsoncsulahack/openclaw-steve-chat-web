@@ -1,6 +1,7 @@
 const state = {
   baseUrl: localStorage.getItem("steve.baseUrl") || "http://127.0.0.1:18080",
   liveMode: localStorage.getItem("steve.liveMode") === "1",
+  mockMicOn: false,
   activeChatId: "steve",
   selectedModel: localStorage.getItem("steve.model") || "gemma-3n-e4b",
   models: [
@@ -35,11 +36,15 @@ const els = {
   mockModeBtn: $("mockModeBtn"),
   runtimeModeBtn: $("runtimeModeBtn"),
   statusDot: document.querySelector(".status-dot"),
+  micBtn: $("micBtn"),
+  composer: document.querySelector(".composer"),
 };
 
 function init() {
   els.baseUrlInput.value = state.baseUrl;
   bindEvents();
+  bindViewportFixes();
+  syncViewport();
   renderAll();
 }
 
@@ -68,6 +73,35 @@ function bindEvents() {
   $("plusBtn").addEventListener("click", () => {
     alert("Hook for attachment/actions menu.");
   });
+
+  els.micBtn.addEventListener("click", toggleMockMic);
+
+  els.messageInput.addEventListener("focus", () => {
+    window.setTimeout(ensureComposerVisible, 120);
+  });
+}
+
+function bindViewportFixes() {
+  window.addEventListener("resize", syncViewport, { passive: true });
+  window.addEventListener("orientationchange", syncViewport, { passive: true });
+
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", syncViewport, { passive: true });
+    window.visualViewport.addEventListener("scroll", syncViewport, { passive: true });
+  }
+}
+
+function syncViewport() {
+  const vv = window.visualViewport;
+  const height = vv ? vv.height : window.innerHeight;
+  const top = vv ? vv.offsetTop : 0;
+
+  document.documentElement.style.setProperty("--app-height", `${Math.round(height)}px`);
+  document.documentElement.style.setProperty("--vv-top", `${Math.round(top)}px`);
+}
+
+function ensureComposerVisible() {
+  els.composer?.scrollIntoView({ block: "end", behavior: "auto" });
 }
 
 function toggleDrawer(open) {
@@ -170,6 +204,17 @@ function renderModeUi() {
   if (els.statusDot) {
     els.statusDot.style.background = state.liveMode ? "#3ad06b" : "#6d7cb4";
   }
+}
+
+function toggleMockMic() {
+  state.mockMicOn = !state.mockMicOn;
+  els.micBtn.classList.toggle("active", state.mockMicOn);
+  els.micBtn.setAttribute("aria-pressed", String(state.mockMicOn));
+  els.modeHint.textContent = state.mockMicOn
+    ? "Mock mic armed (wireframe only)."
+    : state.liveMode
+      ? "Local Runtime mode sends prompts to your selected /v1/chat/completions model endpoint."
+      : "UI Demo mode uses mock Steve replies for flow testing.";
 }
 
 function saveBaseUrl() {

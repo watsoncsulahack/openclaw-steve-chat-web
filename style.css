@@ -8,6 +8,8 @@
   --user: #2f4eff;
   --steve: #1a2450;
   --accent: #4b67ff;
+  --app-height: 100dvh;
+  --vv-top: 0px;
 }
 
 * { box-sizing: border-box; }
@@ -30,16 +32,19 @@ body { min-height: 100dvh; }
 
 .phone-frame {
   width: 100vw;
-  height: 100dvh;
+  height: var(--app-height);
   background: var(--bg);
   border: none;
   border-radius: 0;
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
   box-shadow: none;
   position: fixed;
-  inset: 0;
+  left: 0;
+  right: 0;
+  top: var(--vv-top);
+  min-height: 0;
 }
 
 .topbar {
@@ -62,6 +67,7 @@ body { min-height: 100dvh; }
 
 .icon-btn,
 .composer-icon,
+.composer-mic,
 .composer-send,
 .secondary {
   border: 1px solid var(--line);
@@ -95,6 +101,8 @@ body { min-height: 100dvh; }
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-height: 0;
+  overscroll-behavior: contain;
 }
 
 .msg-row {
@@ -134,11 +142,13 @@ body { min-height: 100dvh; }
 
 .composer {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto 1fr auto auto;
   gap: 8px;
-  padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
+  padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--line);
   background: #0d1430;
+  position: relative;
+  z-index: 2;
 }
 
 #messageInput {
@@ -239,6 +249,11 @@ input[type="text"] {
 .mode-btn.active {
   border-color: #4f6cff;
   background: #243b94;
+}
+
+.composer-mic.active {
+  border-color: #6f8cff;
+  background: #2c4bb8;
 }
 
 .hint {
