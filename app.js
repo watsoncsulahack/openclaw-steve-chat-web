@@ -31,12 +31,14 @@ const els = {
   currentModelLabel: $("currentModelLabel"),
   messageInput: $("messageInput"),
   baseUrlInput: $("baseUrlInput"),
-  liveModeToggle: $("liveModeToggle"),
+  modeHint: $("modeHint"),
+  mockModeBtn: $("mockModeBtn"),
+  runtimeModeBtn: $("runtimeModeBtn"),
+  statusDot: document.querySelector(".status-dot"),
 };
 
 function init() {
   els.baseUrlInput.value = state.baseUrl;
-  els.liveModeToggle.checked = state.liveMode;
   bindEvents();
   renderAll();
 }
@@ -55,10 +57,8 @@ function bindEvents() {
   $("saveBaseUrlBtn").addEventListener("click", saveBaseUrl);
   $("detectModelsBtn").addEventListener("click", detectModels);
 
-  els.liveModeToggle.addEventListener("change", () => {
-    state.liveMode = els.liveModeToggle.checked;
-    localStorage.setItem("steve.liveMode", state.liveMode ? "1" : "0");
-  });
+  els.mockModeBtn.addEventListener("click", () => setMode(false));
+  els.runtimeModeBtn.addEventListener("click", () => setMode(true));
 
   $("sendBtn").addEventListener("click", onSend);
   $("messageInput").addEventListener("keydown", (e) => {
@@ -67,10 +67,6 @@ function bindEvents() {
 
   $("plusBtn").addEventListener("click", () => {
     alert("Hook for attachment/actions menu.");
-  });
-
-  $("shareBtn").addEventListener("click", () => {
-    alert("Hook for share/export action.");
   });
 }
 
@@ -94,6 +90,7 @@ function renderAll() {
   renderMessages();
   renderModels();
   syncModelLabel();
+  renderModeUi();
 }
 
 function renderChats() {
@@ -158,10 +155,27 @@ function syncModelLabel() {
   els.currentModelLabel.textContent = model?.name || state.selectedModel;
 }
 
+function setMode(live) {
+  state.liveMode = live;
+  localStorage.setItem("steve.liveMode", state.liveMode ? "1" : "0");
+  renderModeUi();
+}
+
+function renderModeUi() {
+  els.mockModeBtn.classList.toggle("active", !state.liveMode);
+  els.runtimeModeBtn.classList.toggle("active", state.liveMode);
+  els.modeHint.textContent = state.liveMode
+    ? "Local Runtime mode sends prompts to your selected /v1/chat/completions model endpoint."
+    : "UI Demo mode uses mock Steve replies for flow testing.";
+  if (els.statusDot) {
+    els.statusDot.style.background = state.liveMode ? "#3ad06b" : "#6d7cb4";
+  }
+}
+
 function saveBaseUrl() {
   state.baseUrl = (els.baseUrlInput.value || "").trim().replace(/\/$/, "");
   localStorage.setItem("steve.baseUrl", state.baseUrl);
-  alert("Model endpoint saved.");
+  els.modeHint.textContent = `Endpoint saved: ${state.baseUrl}`;
 }
 
 async function detectModels() {
@@ -185,9 +199,9 @@ async function detectModels() {
 
     renderModels();
     syncModelLabel();
-    alert(`Detected ${listed.length} model(s).`);
+    els.modeHint.textContent = `Detected ${listed.length} model(s).`;
   } catch (err) {
-    alert(`Detect failed: ${err.message}`);
+    els.modeHint.textContent = `Detect failed: ${err.message}`;
   }
 }
 

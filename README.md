@@ -28,9 +28,11 @@ From the drawer:
 
 1. Set base URL (default `http://127.0.0.1:18080`)
 2. Tap **Detect** to load local models
-3. Toggle **Use live model replies**
+3. Choose mode:
+   - **UI Demo** (mock Steve replies)
+   - **Local Runtime** (real endpoint calls)
 
-When live mode is off, replies are mocked so UX flow can be reviewed without model runtime dependency.
+UI Demo mode is default so UX flow can be reviewed without model runtime dependency.
 
 ## Next iteration ideas
 
