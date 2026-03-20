@@ -3,9 +3,16 @@
   --bg: #0a0f1f;
   --panel: #121933;
   --panel-2: #1b2242;
+  --surface-1: #0d1430;
+  --surface-2: #0a1229;
+  --surface-3: #0c1430;
+  --input-bg: #121937;
+  --text: #eef2ff;
+  --text-strong: #f4f6ff;
   --muted: #8f9ac2;
   --line: #2a345f;
   --user: #2f4eff;
+  --user-text: #f7f9ff;
   --steve: #1a2450;
   --accent: #4b67ff;
   --app-height: 100dvh;
@@ -18,7 +25,7 @@ html, body {
   margin: 0;
   background: linear-gradient(180deg, #070b18, #111a34);
   font-family: Inter, Roboto, system-ui, sans-serif;
-  color: #eef2ff;
+  color: var(--text);
   height: 100%;
   overflow: hidden;
 }
@@ -26,25 +33,22 @@ html, body {
 body { min-height: 100dvh; }
 
 body.theme-light {
-  --bg: #eef3ff;
-  --panel: #f8fbff;
-  --panel-2: #e6edff;
+  color-scheme: light;
+  --bg: #edf2ff;
+  --panel: #f6f8ff;
+  --panel-2: #e7ecff;
+  --surface-1: #f5f8ff;
+  --surface-2: #f2f6ff;
+  --surface-3: #f5f8ff;
+  --input-bg: #ffffff;
+  --text: #1c2a4f;
+  --text-strong: #162347;
+  --muted: #586995;
   --line: #bcc8ef;
-  --steve: #dde6ff;
-  --user: #5d7bff;
-  color: #1e2a4d;
-  background: linear-gradient(180deg, #e9efff, #f6f9ff);
-}
-
-body.theme-light .topbar,
-body.theme-light .composer,
-body.theme-light .drawer,
-body.theme-light .model-sheet-card {
-  background: #f4f7ff;
-}
-
-body.theme-light .bubble {
-  color: #1e2a4d;
+  --steve: #dce6ff;
+  --user: #4f6df0;
+  --user-text: #f7f9ff;
+  background: linear-gradient(180deg, #eaf0ff, #f7f9ff);
 }
 
 .app-shell {
@@ -76,7 +80,7 @@ body.theme-light .bubble {
   align-items: center;
   padding: calc(8px + env(safe-area-inset-top)) 10px 8px;
   border-bottom: 1px solid var(--line);
-  background: #0d1430;
+  background: var(--surface-1);
 }
 
 .topbar-actions {
@@ -89,7 +93,7 @@ body.theme-light .bubble {
 .msg-tps {
   margin-top: 6px;
   font-size: 11px;
-  color: #b9c8f8;
+  color: var(--muted);
 }
 
 .status-dot {
@@ -106,7 +110,7 @@ body.theme-light .bubble {
 .secondary {
   border: 1px solid var(--line);
   background: var(--panel-2);
-  color: #f4f6ff;
+  color: var(--text-strong);
   border-radius: 12px;
   height: 40px;
   min-width: 40px;
@@ -124,7 +128,7 @@ body.theme-light .bubble {
 .model-pill {
   border: 1px solid var(--line);
   background: var(--panel);
-  color: #f4f6ff;
+  color: var(--text-strong);
   border-radius: 12px;
   height: 40px;
   display: flex;
@@ -186,7 +190,7 @@ body.theme-light .bubble {
   place-items: center;
   border: 1px solid var(--line);
   font-size: 14px;
-  background: #131d43;
+  background: var(--panel-2);
 }
 
 .bubble {
@@ -196,6 +200,7 @@ body.theme-light .bubble {
   line-height: 1.35;
   font-size: 15px;
   white-space: pre-wrap;
+  color: var(--text-strong);
 }
 
 .bubble-reply {
@@ -208,15 +213,15 @@ body.theme-light .bubble {
 }
 
 .msg-row.steve .bubble { background: var(--steve); }
-.msg-row.user .bubble { background: var(--user); border-color: #4960f0; }
+.msg-row.user .bubble { background: var(--user); border-color: #4960f0; color: var(--user-text); }
 
 .reply-banner {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  border-top: 1px solid #24325f;
-  background: #0d1635;
+  border-top: 1px solid var(--line);
+  background: var(--surface-1);
   padding: 8px 10px;
 }
 
@@ -226,16 +231,16 @@ body.theme-light .bubble {
 
 .reply-banner-text {
   font-size: 13px;
-  color: #cbd7ff;
+  color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .reply-banner-clear {
-  border: 1px solid #34467d;
-  background: #1a2a57;
-  color: #e6eeff;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text-strong);
   border-radius: 999px;
   width: 28px;
   min-width: 28px;
@@ -248,15 +253,15 @@ body.theme-light .bubble {
   gap: 8px;
   padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--line);
-  background: #0d1430;
+  background: var(--surface-1);
   position: relative;
   z-index: 2;
 }
 
 #messageInput {
   border: 1px solid var(--line);
-  background: #121937;
-  color: #fff;
+  background: var(--input-bg);
+  color: var(--text-strong);
   border-radius: 999px;
   padding: 0 14px;
   min-height: 42px;
@@ -264,11 +269,16 @@ body.theme-light .bubble {
   font-size: 16px;
 }
 
+#messageInput::placeholder,
+input[type="text"]::placeholder {
+  color: var(--muted);
+}
+
 .drawer {
   position: fixed;
   inset: 0 auto 0 0;
   width: min(88vw, 330px);
-  background: #0a1229;
+  background: var(--surface-2);
   border-right: 1px solid var(--line);
   transform: translateX(-100%);
   transition: transform 180ms ease;
@@ -328,6 +338,12 @@ body.theme-light .bubble {
   box-shadow: inset 0 0 0 1px #5d79d8;
 }
 
+body.theme-light .icon-btn.active {
+  border-color: #6b86e2;
+  background: #dbe5ff;
+  box-shadow: inset 0 0 0 1px #9cb2ef;
+}
+
 #drawerCompactBtn {
   display: none;
   font-size: 40px;
@@ -367,7 +383,7 @@ body.theme-light .bubble {
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 10px;
-  background: #111933;
+  background: var(--panel);
 }
 
 .drawer-section.drawer-chats {
@@ -380,7 +396,7 @@ body.theme-light .bubble {
   min-height: 0;
 }
 
-.drawer-section h3 { margin: 0; font-size: 14px; color: #d6ddff; }
+.drawer-section h3 { margin: 0; font-size: 14px; color: var(--muted); }
 
 .drawer-section-head {
   display: flex;
@@ -415,9 +431,9 @@ body.theme-light .bubble {
   width: 28px;
   height: 28px;
   border-radius: 999px;
-  border: 1px solid #3a4a84;
-  background: #1b2a57;
-  color: #eaf0ff;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text-strong);
   display: none;
 }
 
@@ -428,7 +444,8 @@ body.theme-light .bubble {
 }
 
 .chat-list {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 8px;
   overflow-y: auto;
   overflow-x: hidden;
@@ -442,10 +459,11 @@ body.theme-light .bubble {
 .chat-item {
   position: relative;
   overflow: hidden;
-  background: #131c3d;
-  border: 1px solid #24315f;
+  background: var(--panel);
+  border: 1px solid var(--line);
   border-radius: 10px;
   padding: 9px;
+  min-height: 64px;
   cursor: pointer;
   touch-action: pan-y;
   transition: transform 120ms ease, opacity 120ms ease;
@@ -458,6 +476,8 @@ body.theme-light .bubble {
   grid-template-columns: 28px 1fr;
   gap: 10px;
   align-items: center;
+  transition: transform 120ms ease;
+  will-change: transform;
 }
 
 .swipe-cue {
@@ -475,8 +495,9 @@ body.theme-light .bubble {
 
 .swipe-cue-right {
   justify-content: flex-start;
-  background: linear-gradient(90deg, rgba(31,115,70,.7), rgba(20,32,58,0));
-  color: #d8ffea;
+  gap: 6px;
+  background: linear-gradient(90deg, rgba(31,115,70,.78), rgba(20,32,58,0));
+  color: #e7fff2;
 }
 
 .swipe-cue-left {
@@ -488,6 +509,22 @@ body.theme-light .bubble {
 .chat-item.swipe-preview-right .swipe-cue-right,
 .chat-item.swipe-preview-left .swipe-cue-left {
   opacity: 1;
+}
+
+.swipe-cue .archive-glyph {
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.9;
+}
+
+.chat-item strong {
+  color: var(--text-strong);
+  font-size: 15px;
+}
+
+.chat-item small {
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .chat-identicon {
@@ -506,14 +543,30 @@ body.theme-light .bubble {
   background: #1a2a63;
 }
 
+body.theme-light .chat-item {
+  background: #eef3ff;
+  border-color: #c4d0f2;
+  color: #1d2a4f;
+}
+
+body.theme-light .chat-item.active {
+  background: #dce6ff;
+  border-color: #6d88e4;
+}
+
+body.theme-light .chat-identicon {
+  border-color: #9caedc;
+  background-color: #dbe4ff;
+}
+
 .field-label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
 
 input[type="text"] {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: #0f1734;
-  color: white;
+  background: var(--input-bg);
+  color: var(--text-strong);
   min-height: 38px;
   padding: 0 10px;
   font-size: 16px;
@@ -538,8 +591,43 @@ input[type="text"] {
   background: #243b94;
 }
 
+body.theme-light .topbar,
+body.theme-light .composer,
+body.theme-light .drawer,
+body.theme-light .model-sheet-card,
+body.theme-light .settings-modal .model-sheet-card {
+  background: var(--surface-1);
+}
+
+body.theme-light .icon-btn,
+body.theme-light .secondary,
+body.theme-light .model-pill,
+body.theme-light .composer-icon,
+body.theme-light .composer-mic {
+  color: #1c2a4f;
+}
+
+body.theme-light .send-glyph,
+body.theme-light .mic-glyph {
+  stroke: #23376a;
+}
+
+body.theme-light .status-dot {
+  background: #6f83bd;
+}
+
+body.theme-light .swipe-cue-left {
+  background: linear-gradient(-90deg, rgba(180, 61, 75, .35), rgba(255,255,255,0));
+  color: #6a2030;
+}
+
+body.theme-light .swipe-cue-right {
+  background: linear-gradient(90deg, rgba(49, 131, 93, .34), rgba(255,255,255,0));
+  color: #1f6c4a;
+}
+
 .composer-mic {
-  background: #1a2344;
+  background: var(--panel-2);
   display: grid;
   place-items: center;
   padding: 0;
@@ -558,7 +646,7 @@ input[type="text"] {
 .archive-glyph {
   width: 22px;
   height: 22px;
-  stroke: #e8efff;
+  stroke: currentColor;
   fill: none;
   stroke-width: 1.8;
   stroke-linecap: round;
@@ -568,9 +656,19 @@ input[type="text"] {
 .composer-send {
   background: #273f9b;
   border-color: #4965d0;
-  font-size: 30px;
-  font-weight: 800;
-  line-height: 1;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.send-glyph {
+  width: 25px;
+  height: 25px;
+  stroke: #f5f7ff;
+  fill: none;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .composer-mic.active {
@@ -620,7 +718,7 @@ input[type="text"] {
 .model-sheet-card {
   max-width: 420px;
   margin: 0 auto;
-  background: #0c1430;
+  background: var(--surface-3);
   border: 1px solid var(--line);
   border-radius: 16px;
   max-height: 62dvh;
@@ -655,7 +753,7 @@ input[type="text"] {
 
 .model-item {
   border: 1px solid var(--line);
-  background: #121c42;
+  background: var(--panel);
   border-radius: 10px;
   padding: 10px;
   cursor: pointer;
@@ -669,7 +767,7 @@ input[type="text"] {
     grid-template-columns: minmax(250px, 320px) 1fr;
     min-height: var(--app-height);
     height: var(--app-height);
-    background: #0a0f1f;
+    background: var(--bg);
   }
 
   .app-shell.sidebar-collapsed {
