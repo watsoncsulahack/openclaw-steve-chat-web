@@ -41,6 +41,9 @@ export class StorageService {
       chatFilter: state.chatFilter,
       streamMode: state.streamMode,
       ttsEnabled: state.ttsEnabled,
+      runtimeState: state.runtimeState,
+      runtimeStatusText: state.runtimeStatusText,
+      localLlamaConnected: state.localLlamaConnected,
       models: state.models,
       chats: state.chats,
       messages: state.messages,
@@ -64,6 +67,9 @@ export class StorageService {
       "chatFilter",
       "streamMode",
       "ttsEnabled",
+      "runtimeState",
+      "runtimeStatusText",
+      "localLlamaConnected",
     ];
 
     keys.forEach((k) => {

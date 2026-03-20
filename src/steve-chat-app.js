@@ -35,6 +35,7 @@ export class SteveChatApp {
       ttsEnabled: false,
       runtimeState: "idle",
       runtimeStatusText: "Runtime ready.",
+      localLlamaConnected: false,
       models: [
         { id: "gemma-3n-e4b", name: "Gemma 3N E4B" },
         { id: "gemma-3n-e2b", name: "Gemma 3N E2B" },
@@ -251,6 +252,7 @@ export class SteveChatApp {
     this.renderModels();
     this.syncModelLabel();
     this.renderModeUi();
+    this.renderLocalLlamaButton();
   }
 
   renderChatSearchState() {
@@ -628,6 +630,14 @@ export class SteveChatApp {
         this.els.statusDot.style.background = "#3ad06b";
       }
     }
+
+    this.renderLocalLlamaButton();
+  }
+
+  renderLocalLlamaButton() {
+    const connected = Boolean(this.state.localLlamaConnected);
+    this.els.connectLocalLlamaBtn.classList.toggle("active", connected);
+    this.els.connectLocalLlamaBtn.textContent = connected ? "Connected local llama.cpp" : "Connect local llama.cpp";
   }
 
   toggleSpeechInput() {
@@ -688,6 +698,8 @@ export class SteveChatApp {
   async connectLocalLlama() {
     this.els.baseUrlInput.value = "http://127.0.0.1:18080";
     this.saveBaseUrl();
+    this.state.localLlamaConnected = false;
+    this.renderLocalLlamaButton();
     this.setRuntimeState("working", "Connecting to local llama.cpp endpoint...");
     await this.detectModels();
   }
@@ -695,6 +707,10 @@ export class SteveChatApp {
   saveBaseUrl() {
     this.state.baseUrl = (this.els.baseUrlInput.value || "").trim().replace(/\/$/, "");
     localStorage.setItem("steve.baseUrl", this.state.baseUrl);
+
+    const isLocalDefault = this.state.baseUrl === "http://127.0.0.1:18080";
+    if (!isLocalDefault) this.state.localLlamaConnected = false;
+
     this.setRuntimeState("idle", `Endpoint saved: ${this.state.baseUrl}`);
     this.schedulePersist();
   }
@@ -713,9 +729,13 @@ export class SteveChatApp {
 
       this.renderModels();
       this.syncModelLabel();
-      this.setRuntimeState("ok", `Detected ${listed.length} model(s).`);
+
+      const localHit = this.state.baseUrl === "http://127.0.0.1:18080";
+      this.state.localLlamaConnected = localHit;
+      this.setRuntimeState("ok", localHit ? "Connected local llama.cpp" : `Detected ${listed.length} model(s).`);
       this.schedulePersist();
     } catch (err) {
+      this.state.localLlamaConnected = false;
       this.setRuntimeState("error", `Detect failed: ${err.message}`);
     }
   }
@@ -776,11 +796,27 @@ export class SteveChatApp {
       .filter((m) => m.role === "user" || m.role === "steve")
       .map((m) => ({
         role: m.role === "steve" ? "assistant" : "user",
-        content: m.text || "",
+        content: (m.text || "").trim(),
       }))
-      .filter((m) => m.content.trim().length > 0);
+      .filter((m) => m.content.length > 0);
 
-    return mapped.slice(-24);
+    const normalized = [];
+    for (const msg of mapped) {
+      if (normalized.length === 0) {
+        if (msg.role !== "user") continue; // llama.cpp gemma template expects user first (unless system message)
+        normalized.push(msg);
+        continue;
+      }
+
+      const prev = normalized[normalized.length - 1];
+      if (prev.role === msg.role) {
+        normalized[normalized.length - 1] = msg; // coalesce duplicates to preserve alternation
+      } else {
+        normalized.push(msg);
+      }
+    }
+
+    return normalized.slice(-24);
   }
 
   speakText(text) {

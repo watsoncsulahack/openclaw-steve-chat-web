@@ -1,7 +1,7 @@
 export class RuntimeClient {
   async fetchModels(baseUrl) {
     const res = await fetch(`${baseUrl}/v1/models`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) throw await this.httpError(res);
 
     const data = await res.json();
     return (data?.data || [])
@@ -21,7 +21,7 @@ export class RuntimeClient {
       }),
     });
 
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) throw await this.httpError(res);
 
     const data = await res.json();
     const reply = data?.choices?.[0]?.message?.content?.trim() || "(empty reply)";
@@ -49,7 +49,7 @@ export class RuntimeClient {
       }),
     });
 
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) throw await this.httpError(res);
     if (!res.body) throw new Error("Streaming body unavailable");
 
     const reader = res.body.getReader();
@@ -98,6 +98,27 @@ export class RuntimeClient {
     }
 
     return { tps: finalTps };
+  }
+
+  async httpError(res) {
+    let details = "";
+    try {
+      const text = await res.text();
+      if (text) {
+        try {
+          const json = JSON.parse(text);
+          details = json?.error?.message || json?.message || text;
+        } catch {
+          details = text;
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    details = String(details || "").replace(/\s+/g, " ").trim();
+    const clipped = details ? `: ${details.slice(0, 180)}` : "";
+    return new Error(`HTTP ${res.status}${clipped}`);
   }
 
   shortName(full) {

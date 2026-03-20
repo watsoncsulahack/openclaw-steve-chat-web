@@ -591,6 +591,18 @@ input[type="text"] {
   grid-column: 1 / -1;
 }
 
+#connectLocalLlamaBtn.active {
+  border-color: #67c886;
+  background: #1f5635;
+  color: #e8ffef;
+}
+
+body.theme-light #connectLocalLlamaBtn.active {
+  border-color: #5ba87d;
+  background: #d9f1e2;
+  color: #1d5137;
+}
+
 .mode-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
