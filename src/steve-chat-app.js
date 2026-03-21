@@ -1095,7 +1095,26 @@ export class SteveChatApp {
       }
     }
 
-    return normalized.slice(-24);
+    // Keep only a recent window, then re-normalize again so truncation never breaks
+    // user/assistant alternation (Gemma chat template is strict and returns HTTP 500).
+    const windowed = normalized.slice(-24);
+    const safe = [];
+    for (const msg of windowed) {
+      if (safe.length === 0) {
+        if (msg.role !== "user") continue;
+        safe.push(msg);
+        continue;
+      }
+
+      const prev = safe[safe.length - 1];
+      if (prev.role === msg.role) {
+        safe[safe.length - 1] = msg;
+      } else {
+        safe.push(msg);
+      }
+    }
+
+    return safe;
   }
 
   speakText(text) {
