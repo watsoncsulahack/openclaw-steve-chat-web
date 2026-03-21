@@ -14,6 +14,7 @@ SEARCH_DIRS=(
 
 ACTION="${1:-}"; shift || true
 BACKEND="${LLAMA_BACKEND:-regular}"
+MODE="${LLAMA_MODE:-gpu}"
 MODEL_PATH=""
 MODEL_INDEX=""
 
@@ -29,6 +30,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --index)
       MODEL_INDEX="${2:-}"
+      shift 2
+      ;;
+    --mode)
+      MODE="${2:-}"
       shift 2
       ;;
     *)
@@ -62,14 +67,34 @@ case "$BACKEND" in
     BIN="${LLAMA_CPP_BIN:-$(command -v llama-server || true)}"
     PORT="${LLAMA_CPP_PORT:-18080}"
     BACKEND_LABEL="regular"
+    N_GPU_LAYERS_DEFAULT="${LLAMA_CPP_N_GPU_LAYERS:-99}"
     ;;
   qvac)
     BIN="${QVAC_LLAMA_BIN:-$(find_qvac_bin || true)}"
     PORT="${QVAC_LLAMA_PORT:-18081}"
     BACKEND_LABEL="qvac"
+    N_GPU_LAYERS_DEFAULT="${QVAC_N_GPU_LAYERS:-99}"
     ;;
   *)
     echo "[llama-cpp] ERROR: unknown backend '$BACKEND' (expected regular|qvac)" >&2
+    exit 1
+    ;;
+esac
+
+N_GPU_LAYERS="$N_GPU_LAYERS_DEFAULT"
+DEVICE_ARGS=()
+
+case "$MODE" in
+  cpu)
+    N_GPU_LAYERS=0
+    DEVICE_ARGS=(--device none)
+    ;;
+  gpu)
+    ;;
+  auto)
+    ;;
+  *)
+    echo "[llama-cpp] ERROR: unknown mode '$MODE' (expected cpu|gpu|auto)" >&2
     exit 1
     ;;
 esac
@@ -90,7 +115,7 @@ mkdir -p "$RUN_DIR"
 usage() {
   cat <<EOF
 Usage:
-  $(basename "$0") <action> [--backend regular|qvac] [--model /path/model.gguf] [--index N]
+  $(basename "$0") <action> [--backend regular|qvac] [--mode cpu|gpu|auto] [--model /path/model.gguf] [--index N]
 
 Actions:
   list-models
@@ -104,14 +129,15 @@ Backend defaults:
   qvac    -> qvac/fabric llama server on port 18081
 
 Env overrides:
-  LLAMA_CPP_BIN, LLAMA_CPP_PORT
-  QVAC_LLAMA_BIN, QVAC_LLAMA_PORT
+  LLAMA_CPP_BIN, LLAMA_CPP_PORT, LLAMA_CPP_N_GPU_LAYERS
+  QVAC_LLAMA_BIN, QVAC_LLAMA_PORT, QVAC_N_GPU_LAYERS
   LLAMA_CPP_HOST, LLAMA_CPP_CTX, LLAMA_CPP_THREADS
 
 Examples:
   $(basename "$0") list-models
-  $(basename "$0") start --backend regular --index 1
-  $(basename "$0") restart --backend qvac --index 2
+  $(basename "$0") start --backend regular --mode gpu --index 1
+  $(basename "$0") start --backend regular --mode cpu --index 1
+  $(basename "$0") restart --backend qvac --mode gpu --index 2
 EOF
 }
 
@@ -254,6 +280,8 @@ status() {
     echo "  pid:     $pid ($source)"
     echo "  host:    $HOST"
     echo "  port:    $PORT"
+    echo "  mode:    $MODE"
+    echo "  ngl:     $N_GPU_LAYERS"
     [[ -n "$model" ]] && echo "  model:   $model"
     echo "  log:     $LOG_FILE"
   else
@@ -295,6 +323,8 @@ start() {
   echo "  bin:     $BIN"
   echo "  host:    $HOST"
   echo "  port:    $PORT"
+  echo "  mode:    $MODE"
+  echo "  ngl:     $N_GPU_LAYERS"
   echo "  model:   $model_path"
 
   nohup "$BIN" \
@@ -303,6 +333,8 @@ start() {
     --model "$model_path" \
     --ctx-size "$CTX_SIZE" \
     --threads "$THREADS" \
+    --n-gpu-layers "$N_GPU_LAYERS" \
+    "${DEVICE_ARGS[@]}" \
     --jinja \
     > "$LOG_FILE" 2>&1 &
 
