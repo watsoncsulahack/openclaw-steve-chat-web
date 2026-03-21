@@ -6,11 +6,38 @@ import { StorageService } from "./services/storage-service.js";
 
 const WIDE_QUERY = "(min-width: 700px)";
 const ARCHIVE_ICON_SVG = '<svg class="archive-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16"/><rect x="5" y="6" width="14" height="13" rx="2"/><path d="M9 11h6"/><path d="M9 14h6"/></svg>';
-const BACKEND_ENDPOINTS = {
-  qvac: "http://127.0.0.1:18081",
+const REGULAR_RUNTIME_TARGETS = {
+  prebuilt: {
+    label: "Prebuilt llama.cpp",
+    endpoint: "http://127.0.0.1:18080",
+    accel: "gpu-capable",
+  },
+  cpu: {
+    label: "Llama.cpp CPU build",
+    endpoint: "http://127.0.0.1:18082",
+    accel: "cpu-only",
+  },
+  vulkan: {
+    label: "Llama.cpp Vulkan build",
+    endpoint: "http://127.0.0.1:18083",
+    accel: "gpu-capable",
+  },
 };
 
-const REGULAR_RUNTIME_TARGETS = {
+const QVAC_RUNTIME_TARGETS = {
+  cpu: {
+    label: "QVAC CPU build",
+    endpoint: "http://127.0.0.1:18081",
+    accel: "cpu-only",
+  },
+  vulkan: {
+    label: "QVAC Vulkan build",
+    endpoint: "http://127.0.0.1:18084",
+    accel: "gpu-capable",
+  },
+};
+
+const REGULAR_RUNTIME_TARGETS_LEGACY = {
   prebuilt: {
     label: "Prebuilt llama.cpp",
     endpoint: "http://127.0.0.1:18080",
@@ -41,16 +68,19 @@ export class SteveChatApp {
   createInitialState() {
     const backend = localStorage.getItem("steve.backend") || "regular";
     const runtimeTarget = localStorage.getItem("steve.runtimeTarget") || "prebuilt";
+    const qvacRuntimeTarget = localStorage.getItem("steve.qvacRuntimeTarget") || "cpu";
 
     const selectedRuntime = REGULAR_RUNTIME_TARGETS[runtimeTarget] || REGULAR_RUNTIME_TARGETS.prebuilt;
+    const selectedQvacRuntime = QVAC_RUNTIME_TARGETS[qvacRuntimeTarget] || QVAC_RUNTIME_TARGETS.cpu;
     const defaultBaseUrl = backend === "qvac"
-      ? BACKEND_ENDPOINTS.qvac
+      ? selectedQvacRuntime.endpoint
       : selectedRuntime.endpoint;
     const baseUrl = localStorage.getItem("steve.baseUrl") || defaultBaseUrl;
 
     return {
       backend,
       runtimeTarget: REGULAR_RUNTIME_TARGETS[runtimeTarget] ? runtimeTarget : "prebuilt",
+      qvacRuntimeTarget: QVAC_RUNTIME_TARGETS[qvacRuntimeTarget] ? qvacRuntimeTarget : "cpu",
       baseUrl,
       liveMode: localStorage.getItem("steve.liveMode") === "1",
       sidebarCollapsed: localStorage.getItem("steve.sidebarCollapsed") === "1",
@@ -110,6 +140,10 @@ export class SteveChatApp {
       this.state.runtimeTarget = "prebuilt";
     }
 
+    if (!QVAC_RUNTIME_TARGETS[this.state.qvacRuntimeTarget]) {
+      this.state.qvacRuntimeTarget = "cpu";
+    }
+
     this.els.baseUrlInput.value = this.state.baseUrl;
     this.els.streamModeToggle.checked = Boolean(this.state.streamMode);
     this.els.ttsToggle.checked = Boolean(this.state.ttsEnabled);
@@ -143,14 +177,17 @@ export class SteveChatApp {
     return REGULAR_RUNTIME_TARGETS[this.state.runtimeTarget] || REGULAR_RUNTIME_TARGETS.prebuilt;
   }
 
+  getQvacRuntimeTarget() {
+    return QVAC_RUNTIME_TARGETS[this.state.qvacRuntimeTarget] || QVAC_RUNTIME_TARGETS.cpu;
+  }
+
   getBackendEndpoint() {
-    if (this.state.backend === "qvac") return BACKEND_ENDPOINTS.qvac;
+    if (this.state.backend === "qvac") return this.getQvacRuntimeTarget().endpoint;
     return this.getRuntimeTarget().endpoint;
   }
 
   getBackendLabel() {
-    if (this.state.backend === "qvac") return "qvac llama.cpp";
-    return this.getRuntimeTarget().label;
+    return this.state.backend === "qvac" ? this.getQvacRuntimeTarget().label : this.getRuntimeTarget().label;
   }
 
   setBackend(backend) {
@@ -167,7 +204,7 @@ export class SteveChatApp {
     this.renderRuntimeTargetUi();
     this.renderLocalLlamaButton();
 
-    const runtimeLabel = backend === "qvac" ? "QVAC fabric llama.cpp" : this.getRuntimeTarget().label;
+    const runtimeLabel = this.getBackendLabel();
     this.setRuntimeState("idle", `Selected runtime: ${runtimeLabel}. Endpoint set to ${this.state.baseUrl}`);
     this.schedulePersist();
   }
@@ -183,6 +220,24 @@ export class SteveChatApp {
       localStorage.setItem("steve.baseUrl", this.state.baseUrl);
       this.state.localLlamaConnected = false;
       this.setRuntimeState("idle", `Selected runtime: ${this.getRuntimeTarget().label}. Endpoint set to ${this.state.baseUrl}`);
+    }
+
+    this.renderRuntimeTargetUi();
+    this.renderLocalLlamaButton();
+    this.schedulePersist();
+  }
+
+  setQvacRuntimeTarget(target) {
+    if (!QVAC_RUNTIME_TARGETS[target]) return;
+    this.state.qvacRuntimeTarget = target;
+    localStorage.setItem("steve.qvacRuntimeTarget", target);
+
+    if (this.state.backend === "qvac") {
+      this.state.baseUrl = this.getBackendEndpoint();
+      this.els.baseUrlInput.value = this.state.baseUrl;
+      localStorage.setItem("steve.baseUrl", this.state.baseUrl);
+      this.state.localLlamaConnected = false;
+      this.setRuntimeState("idle", `Selected runtime: ${this.getQvacRuntimeTarget().label}. Endpoint set to ${this.state.baseUrl}`);
     }
 
     this.renderRuntimeTargetUi();
@@ -242,6 +297,8 @@ export class SteveChatApp {
     this.els.runtimePrebuiltBtn?.addEventListener("click", () => this.setRuntimeTarget("prebuilt"));
     this.els.runtimeCpuBtn?.addEventListener("click", () => this.setRuntimeTarget("cpu"));
     this.els.runtimeVulkanBtn?.addEventListener("click", () => this.setRuntimeTarget("vulkan"));
+    this.els.qvacCpuBtn?.addEventListener("click", () => this.setQvacRuntimeTarget("cpu"));
+    this.els.qvacVulkanBtn?.addEventListener("click", () => this.setQvacRuntimeTarget("vulkan"));
 
     this.els.mockModeBtn.addEventListener("click", () => this.setMode(false));
     this.els.runtimeModeBtn.addEventListener("click", () => this.setMode(true));
@@ -886,6 +943,8 @@ export class SteveChatApp {
 
   renderRuntimeTargetUi() {
     const regular = this.state.backend === "regular";
+    const qvac = this.state.backend === "qvac";
+
     this.els.runtimePrebuiltBtn?.classList.toggle("active", regular && this.state.runtimeTarget === "prebuilt");
     this.els.runtimeCpuBtn?.classList.toggle("active", regular && this.state.runtimeTarget === "cpu");
     this.els.runtimeVulkanBtn?.classList.toggle("active", regular && this.state.runtimeTarget === "vulkan");
@@ -893,6 +952,12 @@ export class SteveChatApp {
     this.els.runtimePrebuiltBtn && (this.els.runtimePrebuiltBtn.disabled = !regular);
     this.els.runtimeCpuBtn && (this.els.runtimeCpuBtn.disabled = !regular);
     this.els.runtimeVulkanBtn && (this.els.runtimeVulkanBtn.disabled = !regular);
+
+    this.els.qvacCpuBtn?.classList.toggle("active", qvac && this.state.qvacRuntimeTarget === "cpu");
+    this.els.qvacVulkanBtn?.classList.toggle("active", qvac && this.state.qvacRuntimeTarget === "vulkan");
+
+    this.els.qvacCpuBtn && (this.els.qvacCpuBtn.disabled = !qvac);
+    this.els.qvacVulkanBtn && (this.els.qvacVulkanBtn.disabled = !qvac);
   }
 
   renderModeUi() {
@@ -927,9 +992,7 @@ export class SteveChatApp {
 
   renderLocalLlamaButton() {
     const connected = Boolean(this.state.localLlamaConnected);
-    const label = this.state.backend === "qvac"
-      ? "local qvac llama.cpp"
-      : this.getRuntimeTarget().label;
+    const label = this.getBackendLabel();
     this.els.connectLocalLlamaBtn.classList.toggle("active", connected);
     this.els.connectLocalLlamaBtn.textContent = connected ? `Connected ${label}` : `Connect ${label}`;
   }
@@ -1035,7 +1098,7 @@ export class SteveChatApp {
       if (this.state.backend === "qvac" && /NetworkError|Failed to fetch|fetch/i.test(msg)) {
         this.setRuntimeState(
           "error",
-          "Detect failed: qvac backend not reachable on 127.0.0.1:18081. Start qvac server first (set QVAC_LLAMA_BIN, then scripts/llama_cpp_local.sh start --backend qvac --index 1).",
+          `Detect failed: ${this.getQvacRuntimeTarget().label} not reachable on ${this.getBackendEndpoint()}. Start qvac server first (set QVAC_LLAMA_BIN + QVAC_LLAMA_PORT, then scripts/llama_cpp_local.sh start --backend qvac --mode gpu --index 1 for Vulkan testing).`,
         );
       } else {
         this.setRuntimeState("error", `Detect failed: ${msg}`);

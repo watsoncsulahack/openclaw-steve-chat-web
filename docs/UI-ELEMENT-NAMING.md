@@ -45,6 +45,7 @@ Purpose: keep naming consistent so humans/agents can refer to GUI parts unambigu
 - `saveBaseUrlBtn`, `detectModelsBtn`, `connectLocalLlamaBtn`
 - `backendRegularBtn`, `backendQvacBtn`
 - `runtimePrebuiltBtn`, `runtimeCpuBtn`, `runtimeVulkanBtn`
+- `qvacCpuBtn`, `qvacVulkanBtn`
 - `mockModeBtn`, `runtimeModeBtn`
 - `streamModeToggle`, `ttsToggle`
 - `runtimeStatus`, `modeHint`

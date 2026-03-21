@@ -9,7 +9,7 @@ Mobile-first local chat UI prototype inspired by Allan's sketch (hamburger menu,
 - Step 3: tap-through chat flow ✅
   - chat drawer + searchable chat history
   - model picker sheet
-  - settings sheet (endpoint + backend + regular runtime target + runtime mode)
+  - settings sheet (endpoint + backend + regular/qvac runtime targets + runtime mode)
   - message composer + mock Steve replies + mock mic button
   - assistant metadata includes live `tokens/s` + power telemetry
   - bottom session token counters (total / prompt / completion)
@@ -32,7 +32,9 @@ Open:
 From the **Settings** button (⚙):
 
 1. Set base URL (default `http://127.0.0.1:18080`)
-2. Pick backend (**Regular** or **QVAC**) and, for Regular, pick runtime target (**Prebuilt / CPU build / Vulkan build**)
+2. Pick backend (**Regular** or **QVAC**) and runtime target:
+   - Regular: **Prebuilt / CPU build / Vulkan build (GPU)**
+   - QVAC: **QVAC CPU / QVAC Vulkan (GPU)**
 3. Tap **Detect** to load local models
 4. Choose mode:
    - **UI Demo** (mock Steve replies)
@@ -47,7 +49,8 @@ This repo includes a helper script to run either backend:
 - **regular `llama-server` prebuilt** on `127.0.0.1:18080`
 - **regular local CPU build** on `127.0.0.1:18082`
 - **regular local Vulkan build** on `127.0.0.1:18083`
-- **qvac fabric llama-server** on `127.0.0.1:18081` (when qvac binary is available)
+- **qvac CPU build** on `127.0.0.1:18081`
+- **qvac Vulkan build** on `127.0.0.1:18084`
 
 ```bash
 ./scripts/llama_cpp_local.sh list-models
@@ -73,9 +76,23 @@ Start qvac backend (if qvac binary is installed):
 ./scripts/llama_cpp_local.sh start --backend qvac --mode gpu --index 1
 ```
 
+Start all runtime variants at once (high RAM use; may be unstable on constrained devices):
+
+```bash
+./scripts/start_runtime_matrix.sh
+```
+
+Recommended for phone testing: run **one target at a time** (stops others first):
+
+```bash
+./scripts/switch_runtime_target.sh reg-vulkan
+./scripts/switch_runtime_target.sh qvac-vulkan
+```
+
 Then in Steve Chat Settings:
 1. choose backend (Regular or QVAC)
-2. tap **Connect local …** to set endpoint + detect models.
+2. choose runtime target (Regular or QVAC section)
+3. tap **Connect local …** to set endpoint + detect models.
 
 Build helper for upstream llama.cpp arm64 CPU/Vulkan artifacts: `scripts/phase2b_build_llama_org_arm64.sh`
 

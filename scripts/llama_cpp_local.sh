@@ -102,6 +102,9 @@ esac
 PID_FILE="$RUN_DIR/${BACKEND_LABEL}-llama-server-$PORT.pid"
 LOG_FILE="$RUN_DIR/${BACKEND_LABEL}-llama-server-$PORT.log"
 MODEL_FILE="$RUN_DIR/${BACKEND_LABEL}-model-$PORT.path"
+MODE_FILE="$RUN_DIR/${BACKEND_LABEL}-mode-$PORT.txt"
+NGL_FILE="$RUN_DIR/${BACKEND_LABEL}-ngl-$PORT.txt"
+BIN_FILE="$RUN_DIR/${BACKEND_LABEL}-bin-$PORT.path"
 LEGACY_PID_FILE=""
 LEGACY_MODEL_FILE=""
 
@@ -253,6 +256,7 @@ is_running() {
 
 status() {
   local pid model source="pid-file"
+  local run_mode run_ngl run_bin
 
   if [[ -f "$PID_FILE" ]]; then
     pid="$(cat "$PID_FILE" || true)"
@@ -280,8 +284,13 @@ status() {
     echo "  pid:     $pid ($source)"
     echo "  host:    $HOST"
     echo "  port:    $PORT"
-    echo "  mode:    $MODE"
-    echo "  ngl:     $N_GPU_LAYERS"
+    run_mode="$(cat "$MODE_FILE" 2>/dev/null || true)"
+    run_ngl="$(cat "$NGL_FILE" 2>/dev/null || true)"
+    run_bin="$(cat "$BIN_FILE" 2>/dev/null || true)"
+
+    echo "  mode:    ${run_mode:-$MODE}"
+    echo "  ngl:     ${run_ngl:-$N_GPU_LAYERS}"
+    [[ -n "$run_bin" ]] && echo "  bin:     $run_bin"
     [[ -n "$model" ]] && echo "  model:   $model"
     echo "  log:     $LOG_FILE"
   else
@@ -315,6 +324,9 @@ start() {
   fi
 
   echo "$model_path" > "$MODEL_FILE"
+  echo "$MODE" > "$MODE_FILE"
+  echo "$N_GPU_LAYERS" > "$NGL_FILE"
+  echo "$BIN" > "$BIN_FILE"
   if [[ -n "$LEGACY_MODEL_FILE" ]]; then
     echo "$model_path" > "$LEGACY_MODEL_FILE"
   fi
@@ -378,7 +390,7 @@ start() {
 stop() {
   if ! is_running; then
     echo "[llama-cpp] already stopped ($BACKEND_LABEL)"
-    rm -f "$PID_FILE"
+    rm -f "$PID_FILE" "$MODE_FILE" "$NGL_FILE" "$BIN_FILE"
     if [[ -n "$LEGACY_PID_FILE" ]]; then
       rm -f "$LEGACY_PID_FILE"
     fi
@@ -393,7 +405,7 @@ stop() {
 
   if [[ -z "$pid" ]]; then
     echo "[llama-cpp] could not resolve pid for backend=$BACKEND_LABEL (port $PORT)"
-    rm -f "$PID_FILE"
+    rm -f "$PID_FILE" "$MODE_FILE" "$NGL_FILE" "$BIN_FILE"
     return 1
   fi
 
@@ -412,7 +424,7 @@ stop() {
     kill -9 "$pid" 2>/dev/null || true
   fi
 
-  rm -f "$PID_FILE"
+  rm -f "$PID_FILE" "$MODE_FILE" "$NGL_FILE" "$BIN_FILE"
   if [[ -n "$LEGACY_PID_FILE" ]]; then
     rm -f "$LEGACY_PID_FILE"
   fi

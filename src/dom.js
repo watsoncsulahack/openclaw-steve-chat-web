@@ -30,6 +30,8 @@ export function getDomRefs() {
     runtimePrebuiltBtn: $("runtimePrebuiltBtn"),
     runtimeCpuBtn: $("runtimeCpuBtn"),
     runtimeVulkanBtn: $("runtimeVulkanBtn"),
+    qvacCpuBtn: $("qvacCpuBtn"),
+    qvacVulkanBtn: $("qvacVulkanBtn"),
     mockModeBtn: $("mockModeBtn"),
     runtimeModeBtn: $("runtimeModeBtn"),
     streamModeToggle: $("streamModeToggle"),
