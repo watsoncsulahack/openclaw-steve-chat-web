@@ -37,21 +37,6 @@ const QVAC_RUNTIME_TARGETS = {
   },
 };
 
-const REGULAR_RUNTIME_TARGETS_LEGACY = {
-  prebuilt: {
-    label: "Prebuilt llama.cpp",
-    endpoint: "http://127.0.0.1:18080",
-  },
-  cpu: {
-    label: "Llama.cpp CPU build",
-    endpoint: "http://127.0.0.1:18082",
-  },
-  vulkan: {
-    label: "Llama.cpp Vulkan build",
-    endpoint: "http://127.0.0.1:18083",
-  },
-};
-
 export class SteveChatApp {
   constructor() {
     this.els = getDomRefs();
