@@ -106,3 +106,37 @@ Launcher commands map directly to matrix rows:
 ./scripts/llama_cpp_local.sh start --backend qvac --mode cpu --index 1
 ./scripts/llama_cpp_local.sh start --backend qvac --mode gpu --index 1
 ```
+
+## Mini phase 2A local-network fallback (arm64 artifacts)
+
+If GitHub workflow pushes are blocked by PAT scope, use local-network equivalent script:
+
+```bash
+# on a native Linux arm64 builder machine
+scripts/phase2a_build_qvac_arm64.sh cpu
+scripts/phase2a_build_qvac_arm64.sh vulkan
+```
+
+Common CMake flags used by the script:
+
+```bash
+-G Ninja
+-DCMAKE_BUILD_TYPE=Release
+-DGGML_NATIVE=OFF
+-DLLAMA_CURL=OFF
+-DLLAMA_BUILD_SERVER=ON
+-DLLAMA_BUILD_TOOLS=ON
+-DLLAMA_MTMD=ON
+-DLLAMA_BUILD_EXAMPLES=OFF
+-DLLAMA_BUILD_TESTS=OFF
+```
+
+Per-variant delta:
+
+```bash
+# CPU
+-DGGML_VULKAN=OFF
+
+# GPU (Vulkan)
+-DGGML_VULKAN=ON
+```
