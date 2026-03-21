@@ -7,8 +7,22 @@ import { StorageService } from "./services/storage-service.js";
 const WIDE_QUERY = "(min-width: 700px)";
 const ARCHIVE_ICON_SVG = '<svg class="archive-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16"/><rect x="5" y="6" width="14" height="13" rx="2"/><path d="M9 11h6"/><path d="M9 14h6"/></svg>';
 const BACKEND_ENDPOINTS = {
-  regular: "http://127.0.0.1:18080",
   qvac: "http://127.0.0.1:18081",
+};
+
+const REGULAR_RUNTIME_TARGETS = {
+  prebuilt: {
+    label: "Prebuilt llama.cpp",
+    endpoint: "http://127.0.0.1:18080",
+  },
+  cpu: {
+    label: "Llama.cpp CPU build",
+    endpoint: "http://127.0.0.1:18082",
+  },
+  vulkan: {
+    label: "Llama.cpp Vulkan build",
+    endpoint: "http://127.0.0.1:18083",
+  },
 };
 
 export class SteveChatApp {
@@ -26,10 +40,17 @@ export class SteveChatApp {
 
   createInitialState() {
     const backend = localStorage.getItem("steve.backend") || "regular";
-    const baseUrl = localStorage.getItem("steve.baseUrl") || BACKEND_ENDPOINTS[backend] || BACKEND_ENDPOINTS.regular;
+    const runtimeTarget = localStorage.getItem("steve.runtimeTarget") || "prebuilt";
+
+    const selectedRuntime = REGULAR_RUNTIME_TARGETS[runtimeTarget] || REGULAR_RUNTIME_TARGETS.prebuilt;
+    const defaultBaseUrl = backend === "qvac"
+      ? BACKEND_ENDPOINTS.qvac
+      : selectedRuntime.endpoint;
+    const baseUrl = localStorage.getItem("steve.baseUrl") || defaultBaseUrl;
 
     return {
       backend,
+      runtimeTarget: REGULAR_RUNTIME_TARGETS[runtimeTarget] ? runtimeTarget : "prebuilt",
       baseUrl,
       liveMode: localStorage.getItem("steve.liveMode") === "1",
       sidebarCollapsed: localStorage.getItem("steve.sidebarCollapsed") === "1",
@@ -81,8 +102,12 @@ export class SteveChatApp {
   init() {
     this.ensureStateDefaults();
 
-    if (!BACKEND_ENDPOINTS[this.state.backend]) {
+    if (!["regular", "qvac"].includes(this.state.backend)) {
       this.state.backend = "regular";
+    }
+
+    if (!REGULAR_RUNTIME_TARGETS[this.state.runtimeTarget]) {
+      this.state.runtimeTarget = "prebuilt";
     }
 
     this.els.baseUrlInput.value = this.state.baseUrl;
@@ -114,25 +139,54 @@ export class SteveChatApp {
     this.state.tokens.total = Number.isFinite(tt) ? Math.max(0, Math.round(tt)) : (this.state.tokens.prompt + this.state.tokens.completion);
   }
 
+  getRuntimeTarget() {
+    return REGULAR_RUNTIME_TARGETS[this.state.runtimeTarget] || REGULAR_RUNTIME_TARGETS.prebuilt;
+  }
+
   getBackendEndpoint() {
-    return BACKEND_ENDPOINTS[this.state.backend] || BACKEND_ENDPOINTS.regular;
+    if (this.state.backend === "qvac") return BACKEND_ENDPOINTS.qvac;
+    return this.getRuntimeTarget().endpoint;
   }
 
   getBackendLabel() {
-    return this.state.backend === "qvac" ? "qvac llama.cpp" : "llama.cpp";
+    if (this.state.backend === "qvac") return "qvac llama.cpp";
+    return this.getRuntimeTarget().label;
   }
 
   setBackend(backend) {
-    if (!BACKEND_ENDPOINTS[backend]) return;
+    if (!["regular", "qvac"].includes(backend)) return;
     this.state.backend = backend;
     localStorage.setItem("steve.backend", backend);
+
     this.state.baseUrl = this.getBackendEndpoint();
     this.els.baseUrlInput.value = this.state.baseUrl;
     localStorage.setItem("steve.baseUrl", this.state.baseUrl);
+
     this.state.localLlamaConnected = false;
     this.renderBackendUi();
+    this.renderRuntimeTargetUi();
     this.renderLocalLlamaButton();
-    this.setRuntimeState("idle", `Selected backend: ${backend}. Endpoint set to ${this.state.baseUrl}`);
+
+    const runtimeLabel = backend === "qvac" ? "QVAC fabric llama.cpp" : this.getRuntimeTarget().label;
+    this.setRuntimeState("idle", `Selected runtime: ${runtimeLabel}. Endpoint set to ${this.state.baseUrl}`);
+    this.schedulePersist();
+  }
+
+  setRuntimeTarget(target) {
+    if (!REGULAR_RUNTIME_TARGETS[target]) return;
+    this.state.runtimeTarget = target;
+    localStorage.setItem("steve.runtimeTarget", target);
+
+    if (this.state.backend === "regular") {
+      this.state.baseUrl = this.getBackendEndpoint();
+      this.els.baseUrlInput.value = this.state.baseUrl;
+      localStorage.setItem("steve.baseUrl", this.state.baseUrl);
+      this.state.localLlamaConnected = false;
+      this.setRuntimeState("idle", `Selected runtime: ${this.getRuntimeTarget().label}. Endpoint set to ${this.state.baseUrl}`);
+    }
+
+    this.renderRuntimeTargetUi();
+    this.renderLocalLlamaButton();
     this.schedulePersist();
   }
 
@@ -185,6 +239,10 @@ export class SteveChatApp {
     this.els.backendRegularBtn.addEventListener("click", () => this.setBackend("regular"));
     this.els.backendQvacBtn.addEventListener("click", () => this.setBackend("qvac"));
 
+    this.els.runtimePrebuiltBtn?.addEventListener("click", () => this.setRuntimeTarget("prebuilt"));
+    this.els.runtimeCpuBtn?.addEventListener("click", () => this.setRuntimeTarget("cpu"));
+    this.els.runtimeVulkanBtn?.addEventListener("click", () => this.setRuntimeTarget("vulkan"));
+
     this.els.mockModeBtn.addEventListener("click", () => this.setMode(false));
     this.els.runtimeModeBtn.addEventListener("click", () => this.setMode(true));
     this.els.streamModeToggle.addEventListener("change", (e) => {
@@ -220,8 +278,11 @@ export class SteveChatApp {
     const host = this.els.phoneFrame || this.els.messages;
     if (!host) return;
 
+    this.drawerDrag?.cleanup?.();
+
     let active = false;
     let dragging = false;
+    let pointerId = null;
     let startX = 0;
     let startY = 0;
     let initialOpen = false;
@@ -252,7 +313,29 @@ export class SteveChatApp {
       this.els.backdrop.style.pointerEvents = "";
     };
 
+    const finish = (forcedOpen = null) => {
+      if (!active) return;
+
+      const shouldOpen = forcedOpen == null
+        ? (dragging ? progress > 0.34 : initialOpen)
+        : Boolean(forcedOpen);
+
+      const pid = pointerId;
+      active = false;
+      dragging = false;
+      pointerId = null;
+
+      clearVisual();
+
+      if (pid != null && host.releasePointerCapture) {
+        try { host.releasePointerCapture(pid); } catch { /* ignore */ }
+      }
+
+      this.toggleDrawer(shouldOpen);
+    };
+
     const onDown = (e) => {
+      if (active) return;
       if (this.isWide()) return;
       if (this.els.settingsSheet.classList.contains("show") || this.els.modelSheet.classList.contains("show")) return;
       if (e.pointerType === "mouse" && e.button !== 0) return;
@@ -265,14 +348,20 @@ export class SteveChatApp {
 
       active = true;
       dragging = false;
+      pointerId = e.pointerId;
       startX = e.clientX;
       startY = e.clientY;
       initialOpen = drawerIsOpen;
       progress = initialOpen ? 1 : 0;
+
+      if (host.setPointerCapture && pointerId != null) {
+        try { host.setPointerCapture(pointerId); } catch { /* ignore */ }
+      }
     };
 
     const onMove = (e) => {
       if (!active) return;
+      if (pointerId != null && e.pointerId !== pointerId) return;
 
       const dx = e.clientX - startX;
       const dy = e.clientY - startY;
@@ -280,7 +369,7 @@ export class SteveChatApp {
       if (!dragging) {
         if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
         if (Math.abs(dx) <= Math.abs(dy) * 1.15) {
-          active = false;
+          finish(initialOpen);
           return;
         }
         dragging = true;
@@ -300,20 +389,37 @@ export class SteveChatApp {
       }
     };
 
-    const onEnd = () => {
+    const onUp = (e) => {
       if (!active) return;
-
-      const shouldOpen = dragging ? progress > 0.34 : initialOpen;
-      active = false;
-      dragging = false;
-      clearVisual();
-      this.toggleDrawer(shouldOpen);
+      if (pointerId != null && e.pointerId !== pointerId) return;
+      finish();
     };
+
+    const onCancel = () => finish(initialOpen);
 
     host.addEventListener("pointerdown", onDown, { passive: true });
     host.addEventListener("pointermove", onMove, { passive: true });
-    host.addEventListener("pointerup", onEnd, { passive: true });
-    host.addEventListener("pointercancel", onEnd, { passive: true });
+    host.addEventListener("pointerup", onUp, { passive: true });
+    host.addEventListener("pointercancel", onCancel, { passive: true });
+    host.addEventListener("lostpointercapture", onCancel, { passive: true });
+    window.addEventListener("pointerup", onUp, { passive: true });
+    window.addEventListener("pointercancel", onCancel, { passive: true });
+    window.addEventListener("blur", onCancel, { passive: true });
+    document.addEventListener("visibilitychange", onCancel, { passive: true });
+
+    this.drawerDrag = {
+      cleanup: () => {
+        host.removeEventListener("pointerdown", onDown);
+        host.removeEventListener("pointermove", onMove);
+        host.removeEventListener("pointerup", onUp);
+        host.removeEventListener("pointercancel", onCancel);
+        host.removeEventListener("lostpointercapture", onCancel);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onCancel);
+        window.removeEventListener("blur", onCancel);
+        document.removeEventListener("visibilitychange", onCancel);
+      },
+    };
   }
 
   bindViewportFixes() {
@@ -424,6 +530,7 @@ export class SteveChatApp {
     this.renderModels();
     this.syncModelLabel();
     this.renderBackendUi();
+    this.renderRuntimeTargetUi();
     this.renderModeUi();
     this.renderPowerUi();
     this.renderTokenUi();
@@ -777,6 +884,17 @@ export class SteveChatApp {
     this.els.backendQvacBtn.classList.toggle("active", this.state.backend === "qvac");
   }
 
+  renderRuntimeTargetUi() {
+    const regular = this.state.backend === "regular";
+    this.els.runtimePrebuiltBtn?.classList.toggle("active", regular && this.state.runtimeTarget === "prebuilt");
+    this.els.runtimeCpuBtn?.classList.toggle("active", regular && this.state.runtimeTarget === "cpu");
+    this.els.runtimeVulkanBtn?.classList.toggle("active", regular && this.state.runtimeTarget === "vulkan");
+
+    this.els.runtimePrebuiltBtn && (this.els.runtimePrebuiltBtn.disabled = !regular);
+    this.els.runtimeCpuBtn && (this.els.runtimeCpuBtn.disabled = !regular);
+    this.els.runtimeVulkanBtn && (this.els.runtimeVulkanBtn.disabled = !regular);
+  }
+
   renderModeUi() {
     this.els.mockModeBtn.classList.toggle("active", !this.state.liveMode);
     this.els.runtimeModeBtn.classList.toggle("active", this.state.liveMode);
@@ -784,7 +902,7 @@ export class SteveChatApp {
     this.els.ttsToggle.checked = Boolean(this.state.ttsEnabled);
 
     this.els.modeHint.textContent = this.state.liveMode
-      ? "Local Runtime mode sends prompts with chat history to /v1/chat/completions."
+      ? `Local Runtime mode (${this.getBackendLabel()}) sends prompts with chat history to /v1/chat/completions.`
       : "UI Demo mode uses mock Steve replies for flow testing.";
 
     this.els.runtimeStatus.textContent = this.state.runtimeStatusText || "Runtime: idle.";
@@ -802,13 +920,16 @@ export class SteveChatApp {
     }
 
     this.renderBackendUi();
+    this.renderRuntimeTargetUi();
     this.renderPowerUi();
     this.renderLocalLlamaButton();
   }
 
   renderLocalLlamaButton() {
     const connected = Boolean(this.state.localLlamaConnected);
-    const label = this.state.backend === "qvac" ? "local qvac llama.cpp" : "local llama.cpp";
+    const label = this.state.backend === "qvac"
+      ? "local qvac llama.cpp"
+      : this.getRuntimeTarget().label;
     this.els.connectLocalLlamaBtn.classList.toggle("active", connected);
     this.els.connectLocalLlamaBtn.textContent = connected ? `Connected ${label}` : `Connect ${label}`;
   }

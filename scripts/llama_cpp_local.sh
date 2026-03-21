@@ -327,7 +327,28 @@ start() {
   echo "  ngl:     $N_GPU_LAYERS"
   echo "  model:   $model_path"
 
-  nohup "$BIN" \
+  local bin_dir ld_library_path unresolved
+  bin_dir="$(dirname "$BIN")"
+  ld_library_path="${LD_LIBRARY_PATH:-}"
+  if [[ -n "$bin_dir" && -d "$bin_dir" ]]; then
+    if [[ -n "$ld_library_path" ]]; then
+      ld_library_path="$bin_dir:$ld_library_path"
+    else
+      ld_library_path="$bin_dir"
+    fi
+  fi
+
+  if command -v ldd >/dev/null 2>&1; then
+    unresolved="$(LD_LIBRARY_PATH="$ld_library_path" ldd "$BIN" 2>/dev/null | awk '/=> not found/{print $1}')"
+    if [[ -n "$unresolved" ]]; then
+      echo "[llama-cpp] ERROR: unresolved shared libs for $BIN" >&2
+      echo "$unresolved" | sed 's/^/  - /' >&2
+      echo "Tip: ensure bundled libs are present beside the binary (including libmtmd.so*), or set LD_LIBRARY_PATH." >&2
+      exit 1
+    fi
+  fi
+
+  nohup env LD_LIBRARY_PATH="$ld_library_path" "$BIN" \
     --host "$HOST" \
     --port "$PORT" \
     --model "$model_path" \

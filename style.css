@@ -614,6 +614,19 @@ body.theme-light #connectLocalLlamaBtn.active {
   margin-top: 8px;
 }
 
+.runtime-target-row {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.runtime-target-row .mode-btn {
+  font-size: 12px;
+}
+
+.runtime-target-row .mode-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .toggle-row {
   display: grid;
   gap: 6px;

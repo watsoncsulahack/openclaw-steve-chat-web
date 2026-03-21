@@ -86,7 +86,7 @@ jobs:
           mkdir -p "$OUT"
 
           cp -f build/bin/llama-server "$OUT/"
-          for f in build/bin/libllama.so* build/bin/libggml*.so* build/bin/libggml-*.so*; do
+          for f in build/bin/libllama.so* build/bin/libggml*.so* build/bin/libggml-*.so* build/bin/libmtmd.so*; do
             if [ -e "$f" ]; then cp -f "$f" "$OUT/"; fi
           done
 

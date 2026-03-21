@@ -9,7 +9,7 @@ Mobile-first local chat UI prototype inspired by Allan's sketch (hamburger menu,
 - Step 3: tap-through chat flow ✅
   - chat drawer + searchable chat history
   - model picker sheet
-  - settings sheet (endpoint + runtime mode)
+  - settings sheet (endpoint + backend + regular runtime target + runtime mode)
   - message composer + mock Steve replies + mock mic button
   - assistant metadata includes live `tokens/s` + power telemetry
   - bottom session token counters (total / prompt / completion)
@@ -32,8 +32,9 @@ Open:
 From the **Settings** button (⚙):
 
 1. Set base URL (default `http://127.0.0.1:18080`)
-2. Tap **Detect** to load local models
-3. Choose mode:
+2. Pick backend (**Regular** or **QVAC**) and, for Regular, pick runtime target (**Prebuilt / CPU build / Vulkan build**)
+3. Tap **Detect** to load local models
+4. Choose mode:
    - **UI Demo** (mock Steve replies)
    - **Local Runtime** (real endpoint calls)
 
@@ -43,13 +44,21 @@ UI Demo mode is default so UX flow can be reviewed without model runtime depende
 
 This repo includes a helper script to run either backend:
 
-- **regular `llama-server`** on `127.0.0.1:18080`
+- **regular `llama-server` prebuilt** on `127.0.0.1:18080`
+- **regular local CPU build** on `127.0.0.1:18082`
+- **regular local Vulkan build** on `127.0.0.1:18083`
 - **qvac fabric llama-server** on `127.0.0.1:18081` (when qvac binary is available)
 
 ```bash
 ./scripts/llama_cpp_local.sh list-models
 ./scripts/llama_cpp_local.sh start --backend regular --mode gpu --index 1
 ./scripts/llama_cpp_local.sh start --backend regular --mode cpu --index 1
+
+# launch additional regular endpoints from custom binaries
+LLAMA_CPP_BIN=/tmp/llama-b8419/build-openclaw-cpu/bin/llama-server LLAMA_CPP_PORT=18082 \
+  ./scripts/llama_cpp_local.sh start --backend regular --mode cpu --index 1
+LLAMA_CPP_BIN=/tmp/llama-b8419/build-openclaw-vulkan/bin/llama-server LLAMA_CPP_PORT=18083 \
+  ./scripts/llama_cpp_local.sh start --backend regular --mode gpu --index 1
 ```
 
 Switch model (example E2B → E4B):
@@ -67,6 +76,13 @@ Start qvac backend (if qvac binary is installed):
 Then in Steve Chat Settings:
 1. choose backend (Regular or QVAC)
 2. tap **Connect local …** to set endpoint + detect models.
+
+Build helper for upstream llama.cpp arm64 CPU/Vulkan artifacts: `scripts/phase2b_build_llama_org_arm64.sh`
+
+Runtime packaging note: keep `libmtmd.so*` beside `llama-server` (plus `libllama.so*` / `libggml*.so*`) or launch with `LD_LIBRARY_PATH` including that folder.
+
+Note: bundled server artifacts must include shared libs beside the binary (including `libmtmd.so*`).
+`llama_cpp_local.sh` now prepends the binary directory to `LD_LIBRARY_PATH` automatically.
 
 Detailed guide: `docs/PHASE2-LLAMA-CPP-SETUP.md`
 

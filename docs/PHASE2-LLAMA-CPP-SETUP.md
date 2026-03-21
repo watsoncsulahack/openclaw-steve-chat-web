@@ -2,7 +2,9 @@
 
 This project is wired to use local OpenAI-compatible endpoints:
 
-- Regular llama.cpp: `http://127.0.0.1:18080`
+- Regular llama.cpp (prebuilt): `http://127.0.0.1:18080`
+- Regular llama.cpp (local CPU build): `http://127.0.0.1:18082`
+- Regular llama.cpp (local Vulkan build): `http://127.0.0.1:18083`
 - QVAC fabric llama.cpp: `http://127.0.0.1:18081`
 
 `llama-server` (from `ggml-org/llama.cpp`) is already available on this host at:
@@ -30,8 +32,13 @@ Use:
 - `scripts/llama_cpp_local.sh stop --backend qvac`
 
 Backend defaults:
-- regular: port `18080`
+- regular (prebuilt): port `18080`
 - qvac: port `18081`
+
+Regular runtime target ports used by the Settings picker:
+- prebuilt: `18080`
+- cpu build: `18082`
+- vulkan build: `18083`
 
 Mode defaults:
 - `--mode gpu` => `--n-gpu-layers 99`
@@ -44,9 +51,10 @@ Mode defaults:
 2. Open Steve Chat (`http://127.0.0.1:8104`).
 3. Open Settings.
 4. Pick backend (**Regular llama.cpp** or **QVAC fabric llama.cpp**).
-5. Click **Connect local …**.
-6. Verify model(s) detected and select in the model picker.
-7. Send a test prompt in **Local Runtime** mode.
+5. If backend is Regular, pick runtime target (**Prebuilt / CPU build / Vulkan build**).
+6. Click **Connect local …**.
+7. Verify model(s) detected and select in the model picker.
+8. Send a test prompt in **Local Runtime** mode.
 
 ## Notes on model selection
 
@@ -117,6 +125,9 @@ scripts/phase2a_build_qvac_arm64.sh cpu
 scripts/phase2a_build_qvac_arm64.sh vulkan
 ```
 
+Packaging requirement: include `libmtmd.so*` in addition to `llama-server`, `libllama.so*`, and `libggml*.so*`.
+Without `libmtmd.so*`, qvac `llama-server` exits before startup.
+
 Common CMake flags used by the script:
 
 ```bash
@@ -139,4 +150,33 @@ Per-variant delta:
 
 # GPU (Vulkan)
 -DGGML_VULKAN=ON
+```
+
+## Mini phase 2B: upstream ggml-org/llama.cpp arm64 builds (CPU + Vulkan)
+
+Use this script for upstream baseline artifacts:
+
+> Packaging note: `llama-server` now depends on `libmtmd.so*` in addition to `libllama.so*` and `libggml*.so*`. Keep all of them in the same folder as the server binary (or set `LD_LIBRARY_PATH`).
+
+```bash
+scripts/phase2b_build_llama_org_arm64.sh cpu
+scripts/phase2b_build_llama_org_arm64.sh vulkan
+```
+
+Runtime launch examples for three regular targets in the UI:
+
+Note: `scripts/llama_cpp_local.sh` prepends `dirname(LLAMA_CPP_BIN|QVAC_LLAMA_BIN)` to `LD_LIBRARY_PATH` automatically.
+
+```bash
+# 1) prebuilt regular on 18080
+LLAMA_CPP_BIN=/usr/bin/llama-server LLAMA_CPP_PORT=18080 \
+  ./scripts/llama_cpp_local.sh restart --backend regular --mode cpu --index 1
+
+# 2) local CPU build on 18082
+LLAMA_CPP_BIN=/tmp/llama-b8419/build-openclaw-cpu/bin/llama-server LLAMA_CPP_PORT=18082 \
+  ./scripts/llama_cpp_local.sh restart --backend regular --mode cpu --index 1
+
+# 3) local Vulkan build on 18083
+LLAMA_CPP_BIN=/tmp/llama-b8419/build-openclaw-vulkan/bin/llama-server LLAMA_CPP_PORT=18083 \
+  ./scripts/llama_cpp_local.sh restart --backend regular --mode gpu --index 1
 ```

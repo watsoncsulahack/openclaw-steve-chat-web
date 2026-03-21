@@ -44,6 +44,7 @@ Purpose: keep naming consistent so humans/agents can refer to GUI parts unambigu
 - `baseUrlInput`
 - `saveBaseUrlBtn`, `detectModelsBtn`, `connectLocalLlamaBtn`
 - `backendRegularBtn`, `backendQvacBtn`
+- `runtimePrebuiltBtn`, `runtimeCpuBtn`, `runtimeVulkanBtn`
 - `mockModeBtn`, `runtimeModeBtn`
 - `streamModeToggle`, `ttsToggle`
 - `runtimeStatus`, `modeHint`
@@ -53,6 +54,8 @@ Purpose: keep naming consistent so humans/agents can refer to GUI parts unambigu
 - `powerAvgValue` — average session power (W)
 - `powerTrendSvg` — sparkline over recent power samples
 - `resetPowerStatsBtn` — reset telemetry counters
+
+Note: the settings-panel power block is intentionally hidden during current design iteration, but IDs are retained in code for later re-introduction.
 
 ### Token counters
 - `sessionTokenBar` — bottom token summary strip
