@@ -44,6 +44,11 @@ export class SteveChatApp {
       runtimeState: "idle",
       runtimeStatusText: "Runtime ready.",
       localLlamaConnected: false,
+      power: {
+        sessionEnergyMWh: 0,
+        sessionMs: 0,
+        samples: [],
+      },
       models: [
         { id: "gemma-3n-e4b", name: "Gemma 3N E4B" },
         { id: "gemma-3n-e2b", name: "Gemma 3N E2B" },
@@ -68,6 +73,8 @@ export class SteveChatApp {
   }
 
   init() {
+    this.ensureStateDefaults();
+
     if (!BACKEND_ENDPOINTS[this.state.backend]) {
       this.state.backend = "regular";
     }
@@ -80,6 +87,15 @@ export class SteveChatApp {
     this.bindViewportFixes();
     this.syncViewport();
     this.renderAll();
+  }
+
+  ensureStateDefaults() {
+    if (!this.state.power || typeof this.state.power !== "object") {
+      this.state.power = { sessionEnergyMWh: 0, sessionMs: 0, samples: [] };
+    }
+    if (!Number.isFinite(Number(this.state.power.sessionEnergyMWh))) this.state.power.sessionEnergyMWh = 0;
+    if (!Number.isFinite(Number(this.state.power.sessionMs))) this.state.power.sessionMs = 0;
+    if (!Array.isArray(this.state.power.samples)) this.state.power.samples = [];
   }
 
   getBackendEndpoint() {
@@ -148,6 +164,7 @@ export class SteveChatApp {
     this.els.drawerCompactBtn.addEventListener("click", () => this.toggleSidebarCollapsed());
     this.els.clearReplyBtn.addEventListener("click", () => this.clearReplyTarget());
     this.els.themeToggleBtn.addEventListener("click", () => this.toggleTheme());
+    this.els.resetPowerStatsBtn?.addEventListener("click", () => this.resetPowerStats());
 
     this.els.backendRegularBtn.addEventListener("click", () => this.setBackend("regular"));
     this.els.backendQvacBtn.addEventListener("click", () => this.setBackend("qvac"));
@@ -178,6 +195,12 @@ export class SteveChatApp {
 
     this.els.messageInput.addEventListener("focus", () => {
       window.setTimeout(() => this.ensureComposerVisible(), 120);
+    });
+
+    GestureService.bindSwipeAction(this.els.messages, {
+      onRight: () => this.toggleDrawer(true),
+      threshold: 78,
+      maxTranslate: 74,
     });
   }
 
@@ -290,6 +313,7 @@ export class SteveChatApp {
     this.syncModelLabel();
     this.renderBackendUi();
     this.renderModeUi();
+    this.renderPowerUi();
     this.renderLocalLlamaButton();
   }
 
@@ -553,7 +577,7 @@ export class SteveChatApp {
     const messages = this.state.messages[this.state.activeChatId] || [];
     this.els.messages.innerHTML = "";
 
-    messages.forEach((msg, idx) => {
+    messages.forEach((msg) => {
       const row = document.createElement("article");
       row.className = `msg-row ${msg.role}`;
 
@@ -590,6 +614,9 @@ export class SteveChatApp {
         if (msg.energyMw != null) {
           bits.push(this.formatPower(msg.energyMw));
         }
+        if (msg.energyMWh != null) {
+          bits.push(this.formatEnergyMWh(msg.energyMWh));
+        }
 
         meta.textContent = bits.join(" • ");
         bubble.appendChild(meta);
@@ -597,19 +624,6 @@ export class SteveChatApp {
 
       row.appendChild(avatar);
       row.appendChild(bubble);
-
-      const cue = document.createElement("div");
-      cue.className = "msg-swipe-cue";
-      cue.textContent = "↩ Reply";
-      row.appendChild(cue);
-
-      GestureService.bindSwipeAction(row, {
-        onRight: () => this.setReplyTarget(idx, msg),
-        threshold: 88,
-        previewClassRight: "swipe-preview-right",
-        maxTranslate: 92,
-      });
-
       this.els.messages.appendChild(row);
     });
 
@@ -675,6 +689,7 @@ export class SteveChatApp {
     }
 
     this.renderBackendUi();
+    this.renderPowerUi();
     this.renderLocalLlamaButton();
   }
 
@@ -804,6 +819,78 @@ export class SteveChatApp {
     if (!Number.isFinite(n)) return "--";
     const watts = Math.max(0, n / 1000);
     return `${watts >= 10 ? watts.toFixed(1) : watts.toFixed(2)} W`;
+  }
+
+  formatEnergyMWh(mWh) {
+    const n = Number(mWh);
+    if (!Number.isFinite(n)) return "--";
+    if (n >= 1000) return `${(n / 1000).toFixed(2)} Wh`;
+    return `${n >= 10 ? n.toFixed(1) : n.toFixed(2)} mWh`;
+  }
+
+  resetPowerStats() {
+    this.state.power = { sessionEnergyMWh: 0, sessionMs: 0, samples: [] };
+    this.renderPowerUi();
+    this.schedulePersist();
+    this.setRuntimeState("idle", "Power telemetry reset.");
+  }
+
+  getAveragePowerMw() {
+    const totalMs = Number(this.state.power?.sessionMs || 0);
+    const totalMWh = Number(this.state.power?.sessionEnergyMWh || 0);
+    if (totalMs <= 0 || totalMWh <= 0) return null;
+    return (totalMWh * 3600000) / totalMs;
+  }
+
+  recordPowerSample(mw) {
+    if (!this.state.power?.samples) this.ensureStateDefaults();
+    const n = Number(mw);
+    if (!Number.isFinite(n) || n < 0) return;
+    this.state.power.samples.push({ t: Date.now(), mw: n });
+    if (this.state.power.samples.length > 120) {
+      this.state.power.samples = this.state.power.samples.slice(-120);
+    }
+  }
+
+  addEnergyUsage(mw, elapsedMs) {
+    const p = Number(mw);
+    const dt = Number(elapsedMs);
+    if (!Number.isFinite(p) || !Number.isFinite(dt) || dt <= 0) return 0;
+
+    const energyMWh = (Math.max(0, p) * dt) / 3600000;
+    this.state.power.sessionEnergyMWh = Number(this.state.power.sessionEnergyMWh || 0) + energyMWh;
+    this.state.power.sessionMs = Number(this.state.power.sessionMs || 0) + dt;
+    this.recordPowerSample(p);
+    return energyMWh;
+  }
+
+  renderPowerUi() {
+    if (!this.els.powerTotalValue || !this.els.powerAvgValue || !this.els.powerTrendSvg) return;
+
+    const totalMWh = Number(this.state.power?.sessionEnergyMWh || 0);
+    this.els.powerTotalValue.textContent = this.formatEnergyMWh(totalMWh);
+
+    const avgMw = this.getAveragePowerMw();
+    this.els.powerAvgValue.textContent = avgMw == null ? "--" : this.formatPower(avgMw);
+
+    const poly = this.els.powerTrendSvg.querySelector("polyline");
+    const samples = (this.state.power?.samples || []).slice(-40);
+
+    if (!poly || samples.length < 2) {
+      if (poly) poly.setAttribute("points", "");
+      return;
+    }
+
+    const min = Math.min(...samples.map((s) => s.mw));
+    const max = Math.max(...samples.map((s) => s.mw));
+    const span = Math.max(1, max - min);
+    const points = samples.map((s, i) => {
+      const x = (i / (samples.length - 1)) * 100;
+      const y = 24 - (((s.mw - min) / span) * 22);
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    }).join(" ");
+
+    poly.setAttribute("points", points);
   }
 
   estimateAutoPowerMw({ text = "", tps = null, live = false }) {
@@ -945,10 +1032,16 @@ export class SteveChatApp {
     const simTps = 9 + Math.random() * 22;
 
     window.setTimeout(() => {
+      const powerMw = this.estimateAutoPowerMw({ text, tps: simTps, live: false });
+      const energyMWh = this.addEnergyUsage(powerMw, delayMs);
+
       this.appendMessage("steve", this.mockReplyForChat(chatId, text), {
         tps: simTps,
-        energyMw: this.estimateAutoPowerMw({ text, tps: simTps, live: false }),
+        energyMw: powerMw,
+        energyMWh,
       }, chatId);
+
+      this.renderPowerUi();
       this.setRuntimeState("idle", "UI Demo response generated.");
     }, delayMs);
   }
@@ -964,6 +1057,7 @@ export class SteveChatApp {
         let streamedText = "";
         let chunkCount = 0;
         let liveTps = null;
+        let livePowerMw = null;
         const startedAt = performance.now();
 
         const result = await this.runtimeClient.streamChat({
@@ -975,14 +1069,18 @@ export class SteveChatApp {
             chunkCount += 1;
             const elapsedSec = Math.max(0.2, (performance.now() - startedAt) / 1000);
             liveTps = chunkCount / elapsedSec;
+            livePowerMw = this.estimateAutoPowerMw({ text, tps: liveTps, live: true });
+            this.recordPowerSample(livePowerMw);
 
             this.patchMessage(chatId, assistantIndex, {
               text: streamedText,
               pending: true,
               error: false,
               tps: liveTps,
-              energyMw: this.estimateAutoPowerMw({ text, tps: liveTps, live: true }),
+              energyMw: livePowerMw,
             });
+
+            if (chunkCount % 4 === 0) this.renderPowerUi();
           },
         });
 
@@ -990,20 +1088,27 @@ export class SteveChatApp {
           streamedText = "(empty reply)";
         }
 
+        const elapsedMs = Math.max(1, performance.now() - startedAt);
         const finalTps = result?.tps ?? liveTps;
+        const finalPowerMw = this.estimateAutoPowerMw({ text, tps: finalTps, live: true });
+        const energyMWh = this.addEnergyUsage(finalPowerMw, elapsedMs);
+
         this.patchMessage(chatId, assistantIndex, {
           text: streamedText,
           pending: false,
           error: false,
           tps: finalTps ?? null,
-          energyMw: this.estimateAutoPowerMw({ text, tps: finalTps, live: true }),
+          energyMw: finalPowerMw,
+          energyMWh,
         });
 
+        this.renderPowerUi();
         this.speakText(streamedText);
-        this.setRuntimeState("ok", "Live stream complete.");
+        this.setRuntimeState("ok", `Live stream complete. Session energy ${this.formatEnergyMWh(this.state.power.sessionEnergyMWh)}.`);
         return;
       }
 
+      const startedAt = performance.now();
       const oneShot = await this.runtimeClient.completeOnce({
         baseUrl: this.state.baseUrl,
         model: this.state.selectedModel,
@@ -1012,15 +1117,21 @@ export class SteveChatApp {
         temperature: 0.4,
       });
 
+      const elapsedMs = Math.max(1, performance.now() - startedAt);
+      const powerMw = this.estimateAutoPowerMw({ text, tps: oneShot.tps, live: true });
+      const energyMWh = this.addEnergyUsage(powerMw, elapsedMs);
+
       this.patchMessage(chatId, assistantIndex, {
         text: oneShot.reply,
         pending: false,
         error: false,
         tps: oneShot.tps ?? null,
-        energyMw: this.estimateAutoPowerMw({ text, tps: oneShot.tps, live: true }),
+        energyMw: powerMw,
+        energyMWh,
       });
+      this.renderPowerUi();
       this.speakText(oneShot.reply);
-      this.setRuntimeState("ok", "Live response complete.");
+      this.setRuntimeState("ok", `Live response complete. Session energy ${this.formatEnergyMWh(this.state.power.sessionEnergyMWh)}.`);
     } catch (err) {
       this.patchMessage(chatId, assistantIndex, {
         text: `Live call failed: ${err.message}`,

@@ -801,6 +801,54 @@ body.theme-light .swipe-cue-right {
   gap: 8px;
 }
 
+.power-panel {
+  margin-top: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(14, 22, 48, 0.35);
+  display: grid;
+  gap: 8px;
+}
+
+.power-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.power-stats {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.power-trend {
+  width: 100%;
+  height: 56px;
+  border-radius: 8px;
+  background: rgba(6, 10, 26, 0.45);
+}
+
+.power-trend polyline {
+  fill: none;
+  stroke: #5e7dff;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+body.theme-light .power-panel {
+  background: rgba(244, 247, 255, 0.85);
+}
+
+body.theme-light .power-trend {
+  background: rgba(230, 236, 255, 0.65);
+}
+
 .model-item {
   border: 1px solid var(--line);
   background: var(--panel);

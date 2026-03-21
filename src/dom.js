@@ -38,6 +38,10 @@ export function getDomRefs() {
     replyBannerText: $("replyBannerText"),
     clearReplyBtn: $("clearReplyBtn"),
     closeSettingsBtn: $("closeSettingsBtn"),
+    powerTotalValue: $("powerTotalValue"),
+    powerAvgValue: $("powerAvgValue"),
+    powerTrendSvg: $("powerTrendSvg"),
+    resetPowerStatsBtn: $("resetPowerStatsBtn"),
 
     menuBtn: $("menuBtn"),
     closeDrawerBtn: $("closeDrawerBtn"),

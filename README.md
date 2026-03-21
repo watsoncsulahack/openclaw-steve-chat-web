@@ -11,7 +11,7 @@ Mobile-first local chat UI prototype inspired by Allan's sketch (hamburger menu,
   - model picker sheet
   - settings sheet (endpoint + runtime mode)
   - message composer + mock Steve replies + mock mic button
-  - top-right TPS badge (`LIVE` from runtime timings or `SIM` in UI Demo mode)
+  - assistant metadata includes live `tokens/s` + power telemetry
   - optional live wire-up to local OpenAI-compatible endpoint (`/v1/models`, `/v1/chat/completions`)
   - foldable/wide layout: persistent left chat drawer + right chat pane
   - collapsible wide-mode sidebar rail with deterministic SHA-256 identicon artwork per chat
@@ -47,19 +47,20 @@ This repo includes a helper script to run either backend:
 
 ```bash
 ./scripts/llama_cpp_local.sh list-models
-./scripts/llama_cpp_local.sh start --backend regular --index 1
+./scripts/llama_cpp_local.sh start --backend regular --mode gpu --index 1
+./scripts/llama_cpp_local.sh start --backend regular --mode cpu --index 1
 ```
 
 Switch model (example E2B → E4B):
 
 ```bash
-./scripts/llama_cpp_local.sh restart --backend regular --index 2
+./scripts/llama_cpp_local.sh restart --backend regular --mode gpu --index 2
 ```
 
 Start qvac backend (if qvac binary is installed):
 
 ```bash
-./scripts/llama_cpp_local.sh start --backend qvac --index 1
+./scripts/llama_cpp_local.sh start --backend qvac --mode gpu --index 1
 ```
 
 Then in Steve Chat Settings:
@@ -67,6 +68,8 @@ Then in Steve Chat Settings:
 2. tap **Connect local …** to set endpoint + detect models.
 
 Detailed guide: `docs/PHASE2-LLAMA-CPP-SETUP.md`
+
+UI naming map: `docs/UI-ELEMENT-NAMING.md`
 
 ## Next iteration ideas
 

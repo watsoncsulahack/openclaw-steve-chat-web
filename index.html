@@ -126,6 +126,20 @@
           </div>
           <p id="runtimeStatus" class="hint">Runtime: idle.</p>
           <p id="modeHint" class="hint">UI Demo mode uses mock Steve replies for flow testing.</p>
+
+          <div class="power-panel">
+            <div class="power-panel-head">
+              <strong>Power telemetry</strong>
+              <button id="resetPowerStatsBtn" class="secondary mini">Reset</button>
+            </div>
+            <div class="power-stats">
+              <span>Total: <b id="powerTotalValue">0.00 mWh</b></span>
+              <span>Avg: <b id="powerAvgValue">--</b></span>
+            </div>
+            <svg id="powerTrendSvg" class="power-trend" viewBox="0 0 100 26" preserveAspectRatio="none" aria-label="Power trend line">
+              <polyline points="" />
+            </svg>
+          </div>
         </div>
       </div>
     </section>
