@@ -585,7 +585,7 @@ export class SteveChatApp {
         if (msg.tps != null) {
           const n = Number(msg.tps);
           const fixed = Number.isFinite(n) ? (n >= 10 ? n.toFixed(0) : n.toFixed(1)) : "--";
-          bits.push(`${msg.tpsMode || "TPS"} ${fixed}`);
+          bits.push(`${fixed} tokens/s`);
         }
         if (msg.energyMw != null) {
           bits.push(`Energy ${this.formatEnergy(msg.energyMw)}`);
@@ -781,7 +781,16 @@ export class SteveChatApp {
       this.schedulePersist();
     } catch (err) {
       this.state.localLlamaConnected = false;
-      this.setRuntimeState("error", `Detect failed: ${err.message}`);
+      const msg = String(err?.message || "Unknown error");
+
+      if (this.state.backend === "qvac" && /NetworkError|Failed to fetch|fetch/i.test(msg)) {
+        this.setRuntimeState(
+          "error",
+          "Detect failed: qvac backend not reachable on 127.0.0.1:18081. Start qvac server first (set QVAC_LLAMA_BIN, then scripts/llama_cpp_local.sh start --backend qvac --index 1).",
+        );
+      } else {
+        this.setRuntimeState("error", `Detect failed: ${msg}`);
+      }
     }
   }
 
@@ -937,7 +946,6 @@ export class SteveChatApp {
     window.setTimeout(() => {
       this.appendMessage("steve", this.mockReplyForChat(chatId, text), {
         tps: simTps,
-        tpsMode: "SIM TPS",
         energyMw: this.estimateDummyEnergyMw({ text, tps: simTps, live: false }),
       }, chatId);
       this.setRuntimeState("idle", "UI Demo response generated.");
@@ -972,7 +980,6 @@ export class SteveChatApp {
               pending: true,
               error: false,
               tps: liveTps,
-              tpsMode: "LIVE TPS",
             });
           },
         });
@@ -987,7 +994,6 @@ export class SteveChatApp {
           pending: false,
           error: false,
           tps: finalTps ?? null,
-          tpsMode: "LIVE TPS",
           energyMw: this.estimateDummyEnergyMw({ text, tps: finalTps, live: true }),
         });
 
@@ -1009,7 +1015,6 @@ export class SteveChatApp {
         pending: false,
         error: false,
         tps: oneShot.tps ?? null,
-        tpsMode: "LIVE TPS",
         energyMw: this.estimateDummyEnergyMw({ text, tps: oneShot.tps, live: true }),
       });
       this.speakText(oneShot.reply);
