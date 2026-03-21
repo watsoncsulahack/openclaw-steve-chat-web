@@ -26,7 +26,10 @@ export class RuntimeClient {
     const data = await res.json();
     const reply = data?.choices?.[0]?.message?.content?.trim() || "(empty reply)";
     const tps = data?.timings?.predicted_per_second ?? data?.usage?.tokens_per_second ?? null;
-    return { reply, tps, raw: data };
+    const promptTokens = data?.usage?.prompt_tokens ?? null;
+    const completionTokens = data?.usage?.completion_tokens ?? null;
+    const totalTokens = data?.usage?.total_tokens ?? null;
+    return { reply, tps, promptTokens, completionTokens, totalTokens, raw: data };
   }
 
   async streamChat({
@@ -56,6 +59,10 @@ export class RuntimeClient {
     const decoder = new TextDecoder();
     let buffer = "";
     let finalTps = null;
+    let promptTokens = null;
+    let completionTokens = null;
+    let totalTokens = null;
+    let tokenEvents = 0;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -75,7 +82,9 @@ export class RuntimeClient {
           if (!line.startsWith("data:")) continue;
           const payload = line.slice(5).trim();
           if (!payload) continue;
-          if (payload === "[DONE]") return { tps: finalTps };
+          if (payload === "[DONE]") {
+            return { tps: finalTps, promptTokens, completionTokens, totalTokens, tokenEvents };
+          }
 
           let json;
           try {
@@ -89,15 +98,24 @@ export class RuntimeClient {
             json?.choices?.[0]?.text ??
             "";
 
-          if (token) onToken?.(token);
+          if (token) {
+            tokenEvents += 1;
+            onToken?.(token);
+          }
 
           const tps = json?.timings?.predicted_per_second ?? json?.usage?.tokens_per_second;
           if (tps != null) finalTps = tps;
+
+          if (json?.usage) {
+            if (json.usage.prompt_tokens != null) promptTokens = json.usage.prompt_tokens;
+            if (json.usage.completion_tokens != null) completionTokens = json.usage.completion_tokens;
+            if (json.usage.total_tokens != null) totalTokens = json.usage.total_tokens;
+          }
         }
       }
     }
 
-    return { tps: finalTps };
+    return { tps: finalTps, promptTokens, completionTokens, totalTokens, tokenEvents };
   }
 
   async httpError(res) {

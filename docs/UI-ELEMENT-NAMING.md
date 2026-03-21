@@ -54,6 +54,12 @@ Purpose: keep naming consistent so humans/agents can refer to GUI parts unambigu
 - `powerTrendSvg` — sparkline over recent power samples
 - `resetPowerStatsBtn` — reset telemetry counters
 
+### Token counters
+- `sessionTokenBar` — bottom token summary strip
+- `sessionTokenTotal` — cumulative session token count
+- `sessionPromptTokens` — cumulative prompt tokens
+- `sessionCompletionTokens` — cumulative completion tokens
+
 ## Message metadata naming
 
 Assistant message footer metadata order:
@@ -66,5 +72,7 @@ Rendered format example:
 
 ## Gesture policy (current)
 
-- **Chat view swipe right** (`messages` container): opens sidebar drawer on mobile.
+- **Chat view horizontal edge drag** (`phone-frame`/`messages`): smoothly drags sidebar drawer on mobile.
+  - supports opening from left edge (swipe right)
+  - supports opening from right edge (swipe left) for one-hand use
 - Message-level swipe-to-reply is disabled to avoid conflict with global navigation gesture.

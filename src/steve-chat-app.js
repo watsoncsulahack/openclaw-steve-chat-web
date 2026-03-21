@@ -19,6 +19,7 @@ export class SteveChatApp {
     this.storage = new StorageService("steve.state.v2");
     this.persistTimer = null;
     this.recognition = null;
+    this.drawerDrag = null;
 
     this.state = this.storage.load(this.createInitialState());
   }
@@ -48,6 +49,11 @@ export class SteveChatApp {
         sessionEnergyMWh: 0,
         sessionMs: 0,
         samples: [],
+      },
+      tokens: {
+        prompt: 0,
+        completion: 0,
+        total: 0,
       },
       models: [
         { id: "gemma-3n-e4b", name: "Gemma 3N E4B" },
@@ -96,6 +102,16 @@ export class SteveChatApp {
     if (!Number.isFinite(Number(this.state.power.sessionEnergyMWh))) this.state.power.sessionEnergyMWh = 0;
     if (!Number.isFinite(Number(this.state.power.sessionMs))) this.state.power.sessionMs = 0;
     if (!Array.isArray(this.state.power.samples)) this.state.power.samples = [];
+
+    if (!this.state.tokens || typeof this.state.tokens !== "object") {
+      this.state.tokens = { prompt: 0, completion: 0, total: 0 };
+    }
+    const tp = Number(this.state.tokens.prompt || 0);
+    const tc = Number(this.state.tokens.completion || 0);
+    const tt = Number(this.state.tokens.total || 0);
+    this.state.tokens.prompt = Number.isFinite(tp) ? Math.max(0, Math.round(tp)) : 0;
+    this.state.tokens.completion = Number.isFinite(tc) ? Math.max(0, Math.round(tc)) : 0;
+    this.state.tokens.total = Number.isFinite(tt) ? Math.max(0, Math.round(tt)) : (this.state.tokens.prompt + this.state.tokens.completion);
   }
 
   getBackendEndpoint() {
@@ -197,11 +213,107 @@ export class SteveChatApp {
       window.setTimeout(() => this.ensureComposerVisible(), 120);
     });
 
-    GestureService.bindSwipeAction(this.els.messages, {
-      onRight: () => this.toggleDrawer(true),
-      threshold: 78,
-      maxTranslate: 74,
-    });
+    this.bindDrawerDragGesture();
+  }
+
+  bindDrawerDragGesture() {
+    const host = this.els.phoneFrame || this.els.messages;
+    if (!host) return;
+
+    let active = false;
+    let dragging = false;
+    let startX = 0;
+    let startY = 0;
+    let initialOpen = false;
+    let progress = 0;
+
+    const edgeWidth = 36;
+
+    const setVisual = (nextProgress) => {
+      const p = Math.max(0, Math.min(1, nextProgress));
+      progress = p;
+
+      this.els.drawer.classList.add("open");
+      this.els.drawer.style.transition = "none";
+      this.els.drawer.style.transform = `translateX(${(-100 + p * 100).toFixed(2)}%)`;
+
+      this.els.backdrop.classList.add("show");
+      this.els.backdrop.classList.remove("settings-dim");
+      this.els.backdrop.style.transition = "none";
+      this.els.backdrop.style.opacity = String((0.45 * p).toFixed(3));
+      this.els.backdrop.style.pointerEvents = p > 0.02 ? "auto" : "none";
+    };
+
+    const clearVisual = () => {
+      this.els.drawer.style.transition = "";
+      this.els.drawer.style.transform = "";
+      this.els.backdrop.style.transition = "";
+      this.els.backdrop.style.opacity = "";
+      this.els.backdrop.style.pointerEvents = "";
+    };
+
+    const onDown = (e) => {
+      if (this.isWide()) return;
+      if (this.els.settingsSheet.classList.contains("show") || this.els.modelSheet.classList.contains("show")) return;
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+
+      const drawerIsOpen = this.els.drawer.classList.contains("open");
+      const nearLeftEdge = e.clientX <= edgeWidth;
+      const nearRightEdge = e.clientX >= window.innerWidth - edgeWidth;
+      const canStart = drawerIsOpen || nearLeftEdge || nearRightEdge;
+      if (!canStart) return;
+
+      active = true;
+      dragging = false;
+      startX = e.clientX;
+      startY = e.clientY;
+      initialOpen = drawerIsOpen;
+      progress = initialOpen ? 1 : 0;
+    };
+
+    const onMove = (e) => {
+      if (!active) return;
+
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+
+      if (!dragging) {
+        if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+        if (Math.abs(dx) <= Math.abs(dy) * 1.15) {
+          active = false;
+          return;
+        }
+        dragging = true;
+      }
+
+      const drawerWidth = Math.max(220, this.els.drawer.getBoundingClientRect().width || 320);
+
+      if (initialOpen) {
+        setVisual(1 + (dx / drawerWidth));
+        return;
+      }
+
+      if (startX >= window.innerWidth - edgeWidth) {
+        setVisual((-dx) / drawerWidth);
+      } else {
+        setVisual(dx / drawerWidth);
+      }
+    };
+
+    const onEnd = () => {
+      if (!active) return;
+
+      const shouldOpen = dragging ? progress > 0.34 : initialOpen;
+      active = false;
+      dragging = false;
+      clearVisual();
+      this.toggleDrawer(shouldOpen);
+    };
+
+    host.addEventListener("pointerdown", onDown, { passive: true });
+    host.addEventListener("pointermove", onMove, { passive: true });
+    host.addEventListener("pointerup", onEnd, { passive: true });
+    host.addEventListener("pointercancel", onEnd, { passive: true });
   }
 
   bindViewportFixes() {
@@ -314,6 +426,7 @@ export class SteveChatApp {
     this.renderBackendUi();
     this.renderModeUi();
     this.renderPowerUi();
+    this.renderTokenUi();
     this.renderLocalLlamaButton();
   }
 
@@ -893,6 +1006,30 @@ export class SteveChatApp {
     poly.setAttribute("points", points);
   }
 
+  estimateTokenCount(text) {
+    const clean = String(text || "").trim();
+    if (!clean) return 0;
+    const words = clean.split(/\s+/).filter(Boolean).length;
+    return Math.max(1, Math.round(words * 1.35));
+  }
+
+  addTokenUsage({ promptTokens = 0, completionTokens = 0, totalTokens = null }) {
+    const p = Math.max(0, Math.round(Number(promptTokens) || 0));
+    const c = Math.max(0, Math.round(Number(completionTokens) || 0));
+    const t = totalTokens == null ? p + c : Math.max(0, Math.round(Number(totalTokens) || 0));
+
+    this.state.tokens.prompt += p;
+    this.state.tokens.completion += c;
+    this.state.tokens.total += t;
+  }
+
+  renderTokenUi() {
+    if (!this.els.sessionTokenTotal || !this.els.sessionPromptTokens || !this.els.sessionCompletionTokens) return;
+    this.els.sessionTokenTotal.textContent = String(this.state.tokens.total || 0);
+    this.els.sessionPromptTokens.textContent = String(this.state.tokens.prompt || 0);
+    this.els.sessionCompletionTokens.textContent = String(this.state.tokens.completion || 0);
+  }
+
   estimateAutoPowerMw({ text = "", tps = null, live = false }) {
     const parsedTps = Number(tps);
     const safeTps = Number.isFinite(parsedTps) ? Math.max(0, parsedTps) : 0;
@@ -1032,16 +1169,22 @@ export class SteveChatApp {
     const simTps = 9 + Math.random() * 22;
 
     window.setTimeout(() => {
+      const replyText = this.mockReplyForChat(chatId, text);
       const powerMw = this.estimateAutoPowerMw({ text, tps: simTps, live: false });
       const energyMWh = this.addEnergyUsage(powerMw, delayMs);
 
-      this.appendMessage("steve", this.mockReplyForChat(chatId, text), {
+      const promptTokens = this.estimateTokenCount(text);
+      const completionTokens = this.estimateTokenCount(replyText);
+      this.addTokenUsage({ promptTokens, completionTokens });
+
+      this.appendMessage("steve", replyText, {
         tps: simTps,
         energyMw: powerMw,
         energyMWh,
       }, chatId);
 
       this.renderPowerUi();
+      this.renderTokenUi();
       this.setRuntimeState("idle", "UI Demo response generated.");
     }, delayMs);
   }
@@ -1093,6 +1236,11 @@ export class SteveChatApp {
         const finalPowerMw = this.estimateAutoPowerMw({ text, tps: finalTps, live: true });
         const energyMWh = this.addEnergyUsage(finalPowerMw, elapsedMs);
 
+        const promptTokens = result?.promptTokens ?? this.estimateTokenCount(text);
+        const completionTokens = result?.completionTokens ?? Math.max(1, Math.round(chunkCount));
+        const totalTokens = result?.totalTokens ?? (promptTokens + completionTokens);
+        this.addTokenUsage({ promptTokens, completionTokens, totalTokens });
+
         this.patchMessage(chatId, assistantIndex, {
           text: streamedText,
           pending: false,
@@ -1103,6 +1251,7 @@ export class SteveChatApp {
         });
 
         this.renderPowerUi();
+        this.renderTokenUi();
         this.speakText(streamedText);
         this.setRuntimeState("ok", `Live stream complete. Session energy ${this.formatEnergyMWh(this.state.power.sessionEnergyMWh)}.`);
         return;
@@ -1121,6 +1270,11 @@ export class SteveChatApp {
       const powerMw = this.estimateAutoPowerMw({ text, tps: oneShot.tps, live: true });
       const energyMWh = this.addEnergyUsage(powerMw, elapsedMs);
 
+      const promptTokens = oneShot.promptTokens ?? this.estimateTokenCount(text);
+      const completionTokens = oneShot.completionTokens ?? this.estimateTokenCount(oneShot.reply);
+      const totalTokens = oneShot.totalTokens ?? (promptTokens + completionTokens);
+      this.addTokenUsage({ promptTokens, completionTokens, totalTokens });
+
       this.patchMessage(chatId, assistantIndex, {
         text: oneShot.reply,
         pending: false,
@@ -1130,6 +1284,7 @@ export class SteveChatApp {
         energyMWh,
       });
       this.renderPowerUi();
+      this.renderTokenUi();
       this.speakText(oneShot.reply);
       this.setRuntimeState("ok", `Live response complete. Session energy ${this.formatEnergyMWh(this.state.power.sessionEnergyMWh)}.`);
     } catch (err) {

@@ -849,6 +849,21 @@ body.theme-light .power-trend {
   background: rgba(230, 236, 255, 0.65);
 }
 
+.session-token-bar {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.78rem;
+  color: var(--muted);
+  padding: 7px 12px calc(8px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  background: var(--surface-1);
+}
+
+.session-token-bar .sub {
+  text-align: right;
+}
+
 .model-item {
   border: 1px solid var(--line);
   background: var(--panel);

@@ -3,6 +3,7 @@ const $ = (id) => document.getElementById(id);
 export function getDomRefs() {
   return {
     appShell: document.querySelector(".app-shell"),
+    phoneFrame: document.querySelector(".phone-frame"),
     drawer: $("drawer"),
     backdrop: $("backdrop"),
     messages: $("messages"),
@@ -42,6 +43,10 @@ export function getDomRefs() {
     powerAvgValue: $("powerAvgValue"),
     powerTrendSvg: $("powerTrendSvg"),
     resetPowerStatsBtn: $("resetPowerStatsBtn"),
+    sessionTokenBar: $("sessionTokenBar"),
+    sessionTokenTotal: $("sessionTokenTotal"),
+    sessionPromptTokens: $("sessionPromptTokens"),
+    sessionCompletionTokens: $("sessionCompletionTokens"),
 
     menuBtn: $("menuBtn"),
     closeDrawerBtn: $("closeDrawerBtn"),
