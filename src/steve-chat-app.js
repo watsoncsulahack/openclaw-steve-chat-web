@@ -37,6 +37,13 @@ const QVAC_RUNTIME_TARGETS = {
   },
 };
 
+const CHAT_TEMPLATE_PRESETS = {
+  none: "",
+  assistant: "You are a helpful assistant. Be accurate, practical, and friendly.",
+  concise: "You are concise and direct. Prefer short bullet points and clear next steps.",
+  coder: "You are a coding copilot. Explain tradeoffs, include runnable examples, and call out risks.",
+};
+
 export class SteveChatApp {
   constructor() {
     this.els = getDomRefs();
@@ -62,6 +69,12 @@ export class SteveChatApp {
       : selectedRuntime.endpoint;
     const baseUrl = localStorage.getItem("steve.baseUrl") || defaultBaseUrl;
 
+    const maxTokensRaw = Number(localStorage.getItem("steve.maxTokens") || 300);
+    const temperatureRaw = Number(localStorage.getItem("steve.temperature") || 0.4);
+    const topPRaw = Number(localStorage.getItem("steve.topP") || 0.95);
+    const chatTemplate = localStorage.getItem("steve.chatTemplate") || "none";
+    const customTemplate = localStorage.getItem("steve.customTemplate") || "";
+
     return {
       backend,
       runtimeTarget: REGULAR_RUNTIME_TARGETS[runtimeTarget] ? runtimeTarget : "prebuilt",
@@ -76,8 +89,18 @@ export class SteveChatApp {
       activeChatId: "steve",
       selectedModel: localStorage.getItem("steve.model") || "gemma-3n-e4b",
       chatFilter: "",
-      streamMode: true,
-      ttsEnabled: false,
+      streamMode: localStorage.getItem("steve.streamMode") !== "0",
+      ttsEnabled: localStorage.getItem("steve.ttsEnabled") === "1",
+      settingsSection: "general",
+      generation: {
+        maxTokens: Number.isFinite(maxTokensRaw) ? Math.max(32, Math.min(4096, Math.round(maxTokensRaw))) : 300,
+        temperature: Number.isFinite(temperatureRaw) ? Math.max(0, Math.min(2, temperatureRaw)) : 0.4,
+        topP: Number.isFinite(topPRaw) ? Math.max(0, Math.min(1, topPRaw)) : 0.95,
+      },
+      promptTemplate: {
+        key: CHAT_TEMPLATE_PRESETS[chatTemplate] != null || chatTemplate === "custom" ? chatTemplate : "none",
+        custom: customTemplate,
+      },
       runtimeState: "idle",
       runtimeStatusText: "Runtime ready.",
       localLlamaConnected: false,
@@ -132,6 +155,11 @@ export class SteveChatApp {
     this.els.baseUrlInput.value = this.state.baseUrl;
     this.els.streamModeToggle.checked = Boolean(this.state.streamMode);
     this.els.ttsToggle.checked = Boolean(this.state.ttsEnabled);
+    if (this.els.chatTemplateSelect) this.els.chatTemplateSelect.value = this.state.promptTemplate.key;
+    if (this.els.customTemplateInput) this.els.customTemplateInput.value = this.state.promptTemplate.custom;
+    if (this.els.maxTokensInput) this.els.maxTokensInput.value = String(this.state.generation.maxTokens);
+    if (this.els.temperatureInput) this.els.temperatureInput.value = String(this.state.generation.temperature);
+    if (this.els.topPInput) this.els.topPInput.value = String(this.state.generation.topP);
     this.applyTheme();
     this.bindEvents();
     this.bindViewportFixes();
@@ -156,6 +184,28 @@ export class SteveChatApp {
     this.state.tokens.prompt = Number.isFinite(tp) ? Math.max(0, Math.round(tp)) : 0;
     this.state.tokens.completion = Number.isFinite(tc) ? Math.max(0, Math.round(tc)) : 0;
     this.state.tokens.total = Number.isFinite(tt) ? Math.max(0, Math.round(tt)) : (this.state.tokens.prompt + this.state.tokens.completion);
+
+    if (!this.state.generation || typeof this.state.generation !== "object") {
+      this.state.generation = { maxTokens: 300, temperature: 0.4, topP: 0.95 };
+    }
+    const maxTokens = Number(this.state.generation.maxTokens || 300);
+    const temperature = Number(this.state.generation.temperature || 0.4);
+    const topP = Number(this.state.generation.topP || 0.95);
+    this.state.generation.maxTokens = Number.isFinite(maxTokens) ? Math.max(32, Math.min(4096, Math.round(maxTokens))) : 300;
+    this.state.generation.temperature = Number.isFinite(temperature) ? Math.max(0, Math.min(2, temperature)) : 0.4;
+    this.state.generation.topP = Number.isFinite(topP) ? Math.max(0, Math.min(1, topP)) : 0.95;
+
+    if (!this.state.promptTemplate || typeof this.state.promptTemplate !== "object") {
+      this.state.promptTemplate = { key: "none", custom: "" };
+    }
+    if (!CHAT_TEMPLATE_PRESETS[this.state.promptTemplate.key] && this.state.promptTemplate.key !== "custom") {
+      this.state.promptTemplate.key = "none";
+    }
+    this.state.promptTemplate.custom = String(this.state.promptTemplate.custom || "");
+
+    if (!["general", "connectivity", "chat"].includes(this.state.settingsSection)) {
+      this.state.settingsSection = "general";
+    }
   }
 
   getRuntimeTarget() {
@@ -175,6 +225,28 @@ export class SteveChatApp {
     return this.state.backend === "qvac" ? this.getQvacRuntimeTarget().label : this.getRuntimeTarget().label;
   }
 
+  parsePortFromBaseUrl() {
+    try {
+      const u = new URL(this.state.baseUrl);
+      return Number(u.port || (u.protocol === "https:" ? 443 : 80));
+    } catch {
+      return null;
+    }
+  }
+
+  async notifyGpuFallbackIfNeeded() {
+    const target = this.state.backend === "qvac" ? this.getQvacRuntimeTarget() : this.getRuntimeTarget();
+    if (target?.accel !== "gpu-capable") return;
+
+    const port = this.parsePortFromBaseUrl();
+    if (!port) return;
+
+    const diag = await this.runtimeClient.fetchLlamaRuntimeStatus(port);
+    if (!diag?.noGpuFound) return;
+
+    this.setRuntimeState("idle", "No GPU was found for this runtime. Steve Chat automatically fell back to CPU mode.");
+  }
+
   setBackend(backend) {
     if (!["regular", "qvac"].includes(backend)) return;
     this.state.backend = backend;
@@ -191,6 +263,7 @@ export class SteveChatApp {
 
     const runtimeLabel = this.getBackendLabel();
     this.setRuntimeState("idle", `Selected runtime: ${runtimeLabel}. Endpoint set to ${this.state.baseUrl}`);
+    this.notifyGpuFallbackIfNeeded();
     this.schedulePersist();
   }
 
@@ -205,6 +278,7 @@ export class SteveChatApp {
       localStorage.setItem("steve.baseUrl", this.state.baseUrl);
       this.state.localLlamaConnected = false;
       this.setRuntimeState("idle", `Selected runtime: ${this.getRuntimeTarget().label}. Endpoint set to ${this.state.baseUrl}`);
+      this.notifyGpuFallbackIfNeeded();
     }
 
     this.renderRuntimeTargetUi();
@@ -223,6 +297,7 @@ export class SteveChatApp {
       localStorage.setItem("steve.baseUrl", this.state.baseUrl);
       this.state.localLlamaConnected = false;
       this.setRuntimeState("idle", `Selected runtime: ${this.getQvacRuntimeTarget().label}. Endpoint set to ${this.state.baseUrl}`);
+      this.notifyGpuFallbackIfNeeded();
     }
 
     this.renderRuntimeTargetUi();
@@ -256,6 +331,10 @@ export class SteveChatApp {
     this.els.closeModelSheetBtn.addEventListener("click", () => this.toggleModelSheet(false));
     this.els.settingsBtn.addEventListener("click", () => this.toggleSettingsSheet(true));
     this.els.closeSettingsBtn.addEventListener("click", () => this.toggleSettingsSheet(false));
+    this.els.settingsNavBtn?.addEventListener("click", () => this.toggleSettingsNavMenu());
+    this.els.settingsSectionGeneralBtn?.addEventListener("click", () => this.setSettingsSection("general"));
+    this.els.settingsSectionConnectivityBtn?.addEventListener("click", () => this.setSettingsSection("connectivity"));
+    this.els.settingsSectionChatBtn?.addEventListener("click", () => this.setSettingsSection("chat"));
 
     this.els.saveBaseUrlBtn.addEventListener("click", () => this.saveBaseUrl());
     this.els.detectModelsBtn.addEventListener("click", () => this.detectModels());
@@ -289,14 +368,19 @@ export class SteveChatApp {
     this.els.runtimeModeBtn.addEventListener("click", () => this.setMode(true));
     this.els.streamModeToggle.addEventListener("change", (e) => {
       this.state.streamMode = Boolean(e.target.checked);
+      localStorage.setItem("steve.streamMode", this.state.streamMode ? "1" : "0");
       this.setRuntimeState("idle", this.state.streamMode ? "Streaming enabled." : "Streaming disabled.");
       this.schedulePersist();
     });
     this.els.ttsToggle.addEventListener("change", (e) => {
       this.state.ttsEnabled = Boolean(e.target.checked);
+      localStorage.setItem("steve.ttsEnabled", this.state.ttsEnabled ? "1" : "0");
       this.setRuntimeState("idle", this.state.ttsEnabled ? "Text-to-speech enabled." : "Text-to-speech disabled.");
       this.schedulePersist();
     });
+    this.els.settingsToggleThemeBtn?.addEventListener("click", () => this.toggleTheme());
+    this.els.chatTemplateSelect?.addEventListener("change", () => this.renderChatDefaultsUi());
+    this.els.saveChatDefaultsBtn?.addEventListener("click", () => this.saveChatDefaults());
 
     this.els.sendBtn.addEventListener("click", () => this.onSend());
     this.els.messageInput.addEventListener("keydown", (e) => {
@@ -547,7 +631,57 @@ export class SteveChatApp {
   toggleSettingsSheet(open) {
     if (open) this.els.modelSheet.classList.remove("show");
     this.els.settingsSheet.classList.toggle("show", open);
+    if (open) this.renderSettingsSections();
+    else this.closeSettingsNavMenu();
     this.syncBackdrop();
+  }
+
+  toggleSettingsNavMenu() {
+    if (!this.els.settingsNavMenu) return;
+    const next = !this.els.settingsNavMenu.classList.contains("open");
+    this.els.settingsNavMenu.classList.toggle("open", next);
+    if (this.els.settingsNavBtn) {
+      this.els.settingsNavBtn.setAttribute("aria-expanded", String(next));
+    }
+  }
+
+  closeSettingsNavMenu() {
+    this.els.settingsNavMenu?.classList.remove("open");
+    if (this.els.settingsNavBtn) {
+      this.els.settingsNavBtn.setAttribute("aria-expanded", "false");
+    }
+  }
+
+  setSettingsSection(section) {
+    if (!["general", "connectivity", "chat"].includes(section)) return;
+    this.state.settingsSection = section;
+    this.renderSettingsSections();
+    this.closeSettingsNavMenu();
+    this.schedulePersist();
+  }
+
+  renderSettingsSections() {
+    const section = this.state.settingsSection || "general";
+
+    this.els.settingsSectionGeneral?.classList.toggle("active", section === "general");
+    this.els.settingsSectionConnectivity?.classList.toggle("active", section === "connectivity");
+    this.els.settingsSectionChat?.classList.toggle("active", section === "chat");
+
+    this.els.settingsSectionGeneralBtn?.classList.toggle("active", section === "general");
+    this.els.settingsSectionConnectivityBtn?.classList.toggle("active", section === "connectivity");
+    this.els.settingsSectionChatBtn?.classList.toggle("active", section === "chat");
+
+    this.renderChatDefaultsUi();
+  }
+
+  renderChatDefaultsUi() {
+    const key = this.els.chatTemplateSelect?.value || this.state.promptTemplate.key || "none";
+    if (!this.els.customTemplateInput) return;
+    const custom = key === "custom";
+    this.els.customTemplateInput.disabled = !custom;
+    this.els.customTemplateInput.placeholder = custom
+      ? "Custom instruction prefix for live runtime prompts"
+      : "Select 'Custom template' to edit this field.";
   }
 
   syncBackdrop() {
@@ -574,6 +708,7 @@ export class SteveChatApp {
     this.renderBackendUi();
     this.renderRuntimeTargetUi();
     this.renderModeUi();
+    this.renderSettingsSections();
     this.renderPowerUi();
     this.renderTokenUi();
     this.renderLocalLlamaButton();
@@ -951,9 +1086,10 @@ export class SteveChatApp {
     this.els.streamModeToggle.checked = Boolean(this.state.streamMode);
     this.els.ttsToggle.checked = Boolean(this.state.ttsEnabled);
 
+    const chatDefaults = `Temp ${this.state.generation.temperature} • top-p ${this.state.generation.topP} • max ${this.state.generation.maxTokens}`;
     this.els.modeHint.textContent = this.state.liveMode
-      ? `Local Runtime mode (${this.getBackendLabel()}) sends prompts with chat history to /v1/chat/completions.`
-      : "UI Demo mode uses mock Steve replies for flow testing.";
+      ? `Local Runtime mode (${this.getBackendLabel()}) sends prompts with chat history to /v1/chat/completions. ${chatDefaults}.`
+      : `UI Demo mode uses mock Steve replies for flow testing. ${chatDefaults}.`;
 
     this.els.runtimeStatus.textContent = this.state.runtimeStatusText || "Runtime: idle.";
 
@@ -1057,6 +1193,53 @@ export class SteveChatApp {
     this.schedulePersist();
   }
 
+  saveChatDefaults() {
+    const templateKey = this.els.chatTemplateSelect?.value || "none";
+    const customTemplate = String(this.els.customTemplateInput?.value || "").trim();
+    const maxTokens = Number(this.els.maxTokensInput?.value || this.state.generation.maxTokens);
+    const temperature = Number(this.els.temperatureInput?.value || this.state.generation.temperature);
+    const topP = Number(this.els.topPInput?.value || this.state.generation.topP);
+
+    this.state.promptTemplate.key = (CHAT_TEMPLATE_PRESETS[templateKey] != null || templateKey === "custom") ? templateKey : "none";
+    this.state.promptTemplate.custom = customTemplate;
+
+    this.state.generation.maxTokens = Number.isFinite(maxTokens) ? Math.max(32, Math.min(4096, Math.round(maxTokens))) : 300;
+    this.state.generation.temperature = Number.isFinite(temperature) ? Math.max(0, Math.min(2, temperature)) : 0.4;
+    this.state.generation.topP = Number.isFinite(topP) ? Math.max(0, Math.min(1, topP)) : 0.95;
+
+    if (this.els.maxTokensInput) this.els.maxTokensInput.value = String(this.state.generation.maxTokens);
+    if (this.els.temperatureInput) this.els.temperatureInput.value = String(this.state.generation.temperature);
+    if (this.els.topPInput) this.els.topPInput.value = String(this.state.generation.topP);
+
+    localStorage.setItem("steve.chatTemplate", this.state.promptTemplate.key);
+    localStorage.setItem("steve.customTemplate", this.state.promptTemplate.custom);
+    localStorage.setItem("steve.maxTokens", String(this.state.generation.maxTokens));
+    localStorage.setItem("steve.temperature", String(this.state.generation.temperature));
+    localStorage.setItem("steve.topP", String(this.state.generation.topP));
+
+    this.setRuntimeState("idle", "Chat defaults saved.");
+    this.schedulePersist();
+  }
+
+  getActiveTemplateText() {
+    if (this.state.promptTemplate.key === "custom") return String(this.state.promptTemplate.custom || "").trim();
+    return String(CHAT_TEMPLATE_PRESETS[this.state.promptTemplate.key] || "").trim();
+  }
+
+  applyTemplateToMessages(messages) {
+    const template = this.getActiveTemplateText();
+    if (!template || !Array.isArray(messages) || !messages.length) return messages;
+
+    const patched = messages.map((m) => ({ ...m }));
+    for (let i = patched.length - 1; i >= 0; i -= 1) {
+      if (patched[i].role === "user") {
+        patched[i].content = `[Instruction]\n${template}\n\n[User]\n${patched[i].content}`;
+        break;
+      }
+    }
+    return patched;
+  }
+
   async detectModels() {
     this.saveBaseUrl();
     try {
@@ -1075,6 +1258,7 @@ export class SteveChatApp {
       const localHit = this.state.baseUrl === this.getBackendEndpoint();
       this.state.localLlamaConnected = localHit;
       this.setRuntimeState("ok", localHit ? `Connected ${this.getBackendLabel()}` : `Detected ${listed.length} model(s).`);
+      await this.notifyGpuFallbackIfNeeded();
       this.schedulePersist();
     } catch (err) {
       this.state.localLlamaConnected = false;
@@ -1381,7 +1565,7 @@ export class SteveChatApp {
     this.setRuntimeState("working", this.state.streamMode ? "Streaming response…" : "Waiting for live response…");
 
     const assistantIndex = this.appendMessage("steve", "", { pending: true }, chatId);
-    const messages = this.buildRuntimeMessages(chatId);
+    const messages = this.applyTemplateToMessages(this.buildRuntimeMessages(chatId));
 
     try {
       if (this.state.streamMode) {
@@ -1395,6 +1579,9 @@ export class SteveChatApp {
           baseUrl: this.state.baseUrl,
           model: this.state.selectedModel,
           messages,
+          maxTokens: this.state.generation.maxTokens,
+          temperature: this.state.generation.temperature,
+          topP: this.state.generation.topP,
           onToken: (token) => {
             streamedText += token;
             chunkCount += 1;
@@ -1450,8 +1637,9 @@ export class SteveChatApp {
         baseUrl: this.state.baseUrl,
         model: this.state.selectedModel,
         messages,
-        maxTokens: 300,
-        temperature: 0.4,
+        maxTokens: this.state.generation.maxTokens,
+        temperature: this.state.generation.temperature,
+        topP: this.state.generation.topP,
       });
 
       const elapsedMs = Math.max(1, performance.now() - startedAt);

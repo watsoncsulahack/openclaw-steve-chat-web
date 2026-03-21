@@ -1,4 +1,18 @@
 export class RuntimeClient {
+  async fetchLlamaRuntimeStatus(port) {
+    const p = Number(port);
+    if (!Number.isFinite(p) || p <= 0) return null;
+
+    try {
+      const res = await fetch(`http://127.0.0.1:8099/v0/llama_runtime_status?port=${p}`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data?.data || null;
+    } catch {
+      return null;
+    }
+  }
+
   async fetchModels(baseUrl) {
     const res = await fetch(`${baseUrl}/v1/models`);
     if (!res.ok) throw await this.httpError(res);
@@ -9,7 +23,7 @@ export class RuntimeClient {
       .filter((m) => m.id);
   }
 
-  async completeOnce({ baseUrl, model, messages, maxTokens = 300, temperature = 0.4 }) {
+  async completeOnce({ baseUrl, model, messages, maxTokens = 300, temperature = 0.4, topP = 0.95 }) {
     const res = await fetch(`${baseUrl}/v1/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -18,6 +32,7 @@ export class RuntimeClient {
         messages,
         max_tokens: maxTokens,
         temperature,
+        top_p: topP,
       }),
     });
 
@@ -39,6 +54,7 @@ export class RuntimeClient {
     onToken,
     maxTokens = 300,
     temperature = 0.4,
+    topP = 0.95,
   }) {
     const res = await fetch(`${baseUrl}/v1/chat/completions`, {
       method: "POST",
@@ -49,6 +65,7 @@ export class RuntimeClient {
         stream: true,
         max_tokens: maxTokens,
         temperature,
+        top_p: topP,
       }),
     });
 
