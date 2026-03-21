@@ -588,7 +588,7 @@ export class SteveChatApp {
           bits.push(`${fixed} tokens/s`);
         }
         if (msg.energyMw != null) {
-          bits.push(`Energy ${this.formatEnergy(msg.energyMw)}`);
+          bits.push(this.formatPower(msg.energyMw));
         }
 
         meta.textContent = bits.join(" • ");
@@ -799,22 +799,23 @@ export class SteveChatApp {
     return cleaned.replace(/\.gguf$/i, "");
   }
 
-  formatEnergy(milliwatts) {
+  formatPower(milliwatts) {
     const n = Number(milliwatts);
     if (!Number.isFinite(n)) return "--";
-    if (n >= 1000) {
-      const w = n / 1000;
-      return `${w >= 10 ? w.toFixed(1) : w.toFixed(2)} W`;
-    }
-    return `${Math.max(1, Math.round(n))} mW`;
+    const watts = Math.max(0, n / 1000);
+    return `${watts >= 10 ? watts.toFixed(1) : watts.toFixed(2)} W`;
   }
 
-  estimateDummyEnergyMw({ text, tps = null, live = false }) {
-    const base = live ? 720 : 540;
-    const textCost = Math.min(420, (text?.length || 0) * 5.3);
-    const tpsCost = Number.isFinite(Number(tps)) ? Number(tps) * 28 : 180;
-    const noise = Math.random() * 160;
-    return base + textCost + tpsCost + noise;
+  estimateAutoPowerMw({ text = "", tps = null, live = false }) {
+    const parsedTps = Number(tps);
+    const safeTps = Number.isFinite(parsedTps) ? Math.max(0, parsedTps) : 0;
+
+    const backendBase = this.state.backend === "qvac" ? 1850 : 2250;
+    const liveOverhead = live ? 180 : 0;
+    const promptCost = Math.min(240, text.length * 0.7);
+    const throughputCost = safeTps * (this.state.backend === "qvac" ? 42 : 55);
+
+    return backendBase + liveOverhead + promptCost + throughputCost;
   }
 
   appendMessage(role, text, options = {}, chatId = this.state.activeChatId) {
@@ -946,7 +947,7 @@ export class SteveChatApp {
     window.setTimeout(() => {
       this.appendMessage("steve", this.mockReplyForChat(chatId, text), {
         tps: simTps,
-        energyMw: this.estimateDummyEnergyMw({ text, tps: simTps, live: false }),
+        energyMw: this.estimateAutoPowerMw({ text, tps: simTps, live: false }),
       }, chatId);
       this.setRuntimeState("idle", "UI Demo response generated.");
     }, delayMs);
@@ -980,6 +981,7 @@ export class SteveChatApp {
               pending: true,
               error: false,
               tps: liveTps,
+              energyMw: this.estimateAutoPowerMw({ text, tps: liveTps, live: true }),
             });
           },
         });
@@ -994,7 +996,7 @@ export class SteveChatApp {
           pending: false,
           error: false,
           tps: finalTps ?? null,
-          energyMw: this.estimateDummyEnergyMw({ text, tps: finalTps, live: true }),
+          energyMw: this.estimateAutoPowerMw({ text, tps: finalTps, live: true }),
         });
 
         this.speakText(streamedText);
@@ -1015,7 +1017,7 @@ export class SteveChatApp {
         pending: false,
         error: false,
         tps: oneShot.tps ?? null,
-        energyMw: this.estimateDummyEnergyMw({ text, tps: oneShot.tps, live: true }),
+        energyMw: this.estimateAutoPowerMw({ text, tps: oneShot.tps, live: true }),
       });
       this.speakText(oneShot.reply);
       this.setRuntimeState("ok", "Live response complete.");

@@ -39,6 +39,24 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+find_qvac_bin() {
+  local candidates=(
+    "$(command -v qvac-llama-server 2>/dev/null || true)"
+    "$(command -v qvac-fabric-llama-server 2>/dev/null || true)"
+    "$(command -v fabric-llama-server 2>/dev/null || true)"
+    "/root/.openclaw/workspace/qvac-fabric-llm.cpp/build-vulkan-gcc/bin/llama-server"
+    "/root/.openclaw/workspace/qvac-fabric-llm.cpp/build/bin/llama-server"
+    "/root/.openclaw/workspace/qvac-fabric-llm.cpp/build-vulkan/bin/llama-server"
+  )
+
+  local c
+  for c in "${candidates[@]}"; do
+    [[ -n "$c" && -x "$c" ]] && { echo "$c"; return 0; }
+  done
+
+  return 1
+}
+
 case "$BACKEND" in
   regular)
     BIN="${LLAMA_CPP_BIN:-$(command -v llama-server || true)}"
@@ -46,7 +64,7 @@ case "$BACKEND" in
     BACKEND_LABEL="regular"
     ;;
   qvac)
-    BIN="${QVAC_LLAMA_BIN:-$(command -v qvac-llama-server || command -v qvac-fabric-llama-server || command -v fabric-llama-server || true)}"
+    BIN="${QVAC_LLAMA_BIN:-$(find_qvac_bin || true)}"
     PORT="${QVAC_LLAMA_PORT:-18081}"
     BACKEND_LABEL="qvac"
     ;;
