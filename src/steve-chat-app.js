@@ -1254,9 +1254,12 @@ export class SteveChatApp {
 
   async detectModels() {
     this.saveBaseUrl();
+    this.setRuntimeState("working", `Detecting models on ${this.state.baseUrl} (waiting for runtime warmup if needed)...`);
     try {
-      const listed = await this.runtimeClient.fetchModels(this.state.baseUrl);
-      if (!listed.length) throw new Error("No models returned");
+      const listed = await this.runtimeClient.fetchModelsWithRetry(this.state.baseUrl, {
+        timeoutMs: 45000,
+        intervalMs: 900,
+      });
 
       this.state.models = listed;
       if (!this.state.models.some((m) => m.id === this.state.selectedModel)) {
@@ -1580,6 +1583,19 @@ export class SteveChatApp {
     const messages = this.applyTemplateToMessages(this.buildRuntimeMessages(chatId));
 
     try {
+      const readyModels = await this.runtimeClient.fetchModelsWithRetry(this.state.baseUrl, {
+        timeoutMs: 30000,
+        intervalMs: 800,
+      });
+
+      if (!readyModels.some((m) => m.id === this.state.selectedModel)) {
+        this.state.models = readyModels;
+        this.state.selectedModel = readyModels[0]?.id || this.state.selectedModel;
+        localStorage.setItem("steve.model", this.state.selectedModel);
+        this.renderModels();
+        this.syncModelLabel();
+      }
+
       if (this.state.streamMode) {
         let streamedText = "";
         let chunkCount = 0;

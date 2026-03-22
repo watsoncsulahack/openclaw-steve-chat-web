@@ -1,4 +1,8 @@
 export class RuntimeClient {
+  sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
   async fetchLlamaRuntimeStatus(port) {
     const p = Number(port);
     if (!Number.isFinite(p) || p <= 0) return null;
@@ -21,6 +25,28 @@ export class RuntimeClient {
     return (data?.data || [])
       .map((m) => ({ id: String(m.id), name: this.shortName(String(m.id)) }))
       .filter((m) => m.id);
+  }
+
+  async fetchModelsWithRetry(baseUrl, { timeoutMs = 45000, intervalMs = 900 } = {}) {
+    const started = Date.now();
+    let lastErr = null;
+
+    while ((Date.now() - started) < timeoutMs) {
+      try {
+        const models = await this.fetchModels(baseUrl);
+        if (models.length > 0) return models;
+        lastErr = new Error("No models returned (runtime may still be loading)");
+      } catch (err) {
+        lastErr = err;
+        const msg = String(err?.message || "");
+        const transient = /HTTP\s*503|Loading model|No models returned|Failed to fetch|NetworkError|Empty reply/i.test(msg);
+        if (!transient) throw err;
+      }
+      await this.sleep(intervalMs);
+    }
+
+    const suffix = lastErr?.message ? `: ${lastErr.message}` : "";
+    throw new Error(`Runtime not ready on ${baseUrl}${suffix}`);
   }
 
   async completeOnce({ baseUrl, model, messages, maxTokens = 300, temperature = 0.4, topP = 0.95 }) {
