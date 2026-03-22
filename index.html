@@ -176,16 +176,41 @@
             <div class="settings-grid-two">
               <div>
                 <label class="field-label" for="temperatureInput">Temperature</label>
-                <input id="temperatureInput" type="number" min="0" max="2" step="0.1" value="0.4" />
+                <input id="temperatureInput" type="number" min="0" max="2" step="0.05" value="0.4" />
               </div>
               <div>
                 <label class="field-label" for="topPInput">Top-p</label>
-                <input id="topPInput" type="number" min="0" max="1" step="0.05" value="0.95" />
+                <input id="topPInput" type="number" min="0" max="1" step="0.01" value="0.95" />
+              </div>
+            </div>
+
+            <div class="settings-grid-two">
+              <div>
+                <label class="field-label" for="topKInput">Top-k</label>
+                <input id="topKInput" type="number" min="0" max="200" step="1" value="40" />
+              </div>
+              <div>
+                <label class="field-label" for="minPInput">Min-p</label>
+                <input id="minPInput" type="number" min="0" max="1" step="0.01" value="0.05" />
+              </div>
+            </div>
+
+            <div class="settings-grid-two">
+              <div>
+                <label class="field-label" for="typicalPInput">Typical-p</label>
+                <input id="typicalPInput" type="number" min="0" max="1" step="0.01" value="1" />
+              </div>
+              <div>
+                <label class="field-label" for="repeatPenaltyInput">Repeat penalty</label>
+                <input id="repeatPenaltyInput" type="number" min="1" max="2" step="0.01" value="1" />
               </div>
             </div>
 
             <label class="field-label" for="maxTokensInput">Max completion tokens</label>
-            <input id="maxTokensInput" type="number" min="32" max="4096" step="32" value="300" />
+            <input id="maxTokensInput" type="number" min="16" max="4096" step="16" value="300" />
+
+            <label class="field-label" for="customRuntimeJsonInput">Custom runtime JSON (advanced)</label>
+            <textarea id="customRuntimeJsonInput" rows="3" placeholder='Optional JSON merged into /v1/chat/completions body, e.g. {"samplers":"top_k;typ_p;top_p;min_p;temperature"}'></textarea>
 
             <div class="drawer-row">
               <button id="saveChatDefaultsBtn" class="secondary">Save chat defaults</button>

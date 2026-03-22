@@ -84,6 +84,11 @@ export class SteveChatApp {
     const maxTokensRaw = Number(localStorage.getItem("steve.maxTokens") || 300);
     const temperatureRaw = Number(localStorage.getItem("steve.temperature") || 0.4);
     const topPRaw = Number(localStorage.getItem("steve.topP") || 0.95);
+    const topKRaw = Number(localStorage.getItem("steve.topK") || 40);
+    const minPRaw = Number(localStorage.getItem("steve.minP") || 0.05);
+    const typicalPRaw = Number(localStorage.getItem("steve.typicalP") || 1);
+    const repeatPenaltyRaw = Number(localStorage.getItem("steve.repeatPenalty") || 1);
+    const customRuntimeJson = localStorage.getItem("steve.customRuntimeJson") || "";
     const chatTemplate = localStorage.getItem("steve.chatTemplate") || "none";
     const customTemplate = localStorage.getItem("steve.customTemplate") || "";
 
@@ -105,9 +110,14 @@ export class SteveChatApp {
       ttsEnabled: localStorage.getItem("steve.ttsEnabled") === "1",
       settingsSection: "general",
       generation: {
-        maxTokens: Number.isFinite(maxTokensRaw) ? Math.max(32, Math.min(4096, Math.round(maxTokensRaw))) : 300,
+        maxTokens: Number.isFinite(maxTokensRaw) ? Math.max(16, Math.min(4096, Math.round(maxTokensRaw))) : 300,
         temperature: Number.isFinite(temperatureRaw) ? Math.max(0, Math.min(2, temperatureRaw)) : 0.4,
         topP: Number.isFinite(topPRaw) ? Math.max(0, Math.min(1, topPRaw)) : 0.95,
+        topK: Number.isFinite(topKRaw) ? Math.max(0, Math.min(200, Math.round(topKRaw))) : 40,
+        minP: Number.isFinite(minPRaw) ? Math.max(0, Math.min(1, minPRaw)) : 0.05,
+        typicalP: Number.isFinite(typicalPRaw) ? Math.max(0, Math.min(1, typicalPRaw)) : 1,
+        repeatPenalty: Number.isFinite(repeatPenaltyRaw) ? Math.max(1, Math.min(2, repeatPenaltyRaw)) : 1,
+        customRuntimeJson,
       },
       promptTemplate: {
         key: CHAT_TEMPLATE_PRESETS[chatTemplate] != null || chatTemplate === "custom" ? chatTemplate : "none",
@@ -172,6 +182,11 @@ export class SteveChatApp {
     if (this.els.maxTokensInput) this.els.maxTokensInput.value = String(this.state.generation.maxTokens);
     if (this.els.temperatureInput) this.els.temperatureInput.value = String(this.state.generation.temperature);
     if (this.els.topPInput) this.els.topPInput.value = String(this.state.generation.topP);
+    if (this.els.topKInput) this.els.topKInput.value = String(this.state.generation.topK);
+    if (this.els.minPInput) this.els.minPInput.value = String(this.state.generation.minP);
+    if (this.els.typicalPInput) this.els.typicalPInput.value = String(this.state.generation.typicalP);
+    if (this.els.repeatPenaltyInput) this.els.repeatPenaltyInput.value = String(this.state.generation.repeatPenalty);
+    if (this.els.customRuntimeJsonInput) this.els.customRuntimeJsonInput.value = String(this.state.generation.customRuntimeJson || "");
     this.applyTheme();
     this.bindEvents();
     this.bindViewportFixes();
@@ -198,14 +213,32 @@ export class SteveChatApp {
     this.state.tokens.total = Number.isFinite(tt) ? Math.max(0, Math.round(tt)) : (this.state.tokens.prompt + this.state.tokens.completion);
 
     if (!this.state.generation || typeof this.state.generation !== "object") {
-      this.state.generation = { maxTokens: 300, temperature: 0.4, topP: 0.95 };
+      this.state.generation = {
+        maxTokens: 300,
+        temperature: 0.4,
+        topP: 0.95,
+        topK: 40,
+        minP: 0.05,
+        typicalP: 1,
+        repeatPenalty: 1,
+        customRuntimeJson: "",
+      };
     }
     const maxTokens = Number(this.state.generation.maxTokens || 300);
     const temperature = Number(this.state.generation.temperature || 0.4);
     const topP = Number(this.state.generation.topP || 0.95);
-    this.state.generation.maxTokens = Number.isFinite(maxTokens) ? Math.max(32, Math.min(4096, Math.round(maxTokens))) : 300;
+    const topK = Number(this.state.generation.topK || 40);
+    const minP = Number(this.state.generation.minP || 0.05);
+    const typicalP = Number(this.state.generation.typicalP || 1);
+    const repeatPenalty = Number(this.state.generation.repeatPenalty || 1);
+    this.state.generation.maxTokens = Number.isFinite(maxTokens) ? Math.max(16, Math.min(4096, Math.round(maxTokens))) : 300;
     this.state.generation.temperature = Number.isFinite(temperature) ? Math.max(0, Math.min(2, temperature)) : 0.4;
     this.state.generation.topP = Number.isFinite(topP) ? Math.max(0, Math.min(1, topP)) : 0.95;
+    this.state.generation.topK = Number.isFinite(topK) ? Math.max(0, Math.min(200, Math.round(topK))) : 40;
+    this.state.generation.minP = Number.isFinite(minP) ? Math.max(0, Math.min(1, minP)) : 0.05;
+    this.state.generation.typicalP = Number.isFinite(typicalP) ? Math.max(0, Math.min(1, typicalP)) : 1;
+    this.state.generation.repeatPenalty = Number.isFinite(repeatPenalty) ? Math.max(1, Math.min(2, repeatPenalty)) : 1;
+    this.state.generation.customRuntimeJson = String(this.state.generation.customRuntimeJson || "").trim();
 
     if (!this.state.promptTemplate || typeof this.state.promptTemplate !== "object") {
       this.state.promptTemplate = { key: "none", custom: "" };
@@ -1098,7 +1131,7 @@ export class SteveChatApp {
     this.els.streamModeToggle.checked = Boolean(this.state.streamMode);
     this.els.ttsToggle.checked = Boolean(this.state.ttsEnabled);
 
-    const chatDefaults = `Temp ${this.state.generation.temperature} • top-p ${this.state.generation.topP} • max ${this.state.generation.maxTokens}`;
+    const chatDefaults = `Temp ${this.state.generation.temperature} • top-k ${this.state.generation.topK} • top-p ${this.state.generation.topP} • min-p ${this.state.generation.minP} • max ${this.state.generation.maxTokens}`;
     this.els.modeHint.textContent = this.state.liveMode
       ? `Local Runtime mode (${this.getBackendLabel()}) sends prompts with chat history to /v1/chat/completions. ${chatDefaults}.`
       : `UI Demo mode uses mock Steve replies for flow testing. ${chatDefaults}.`;
@@ -1211,23 +1244,56 @@ export class SteveChatApp {
     const maxTokens = Number(this.els.maxTokensInput?.value || this.state.generation.maxTokens);
     const temperature = Number(this.els.temperatureInput?.value || this.state.generation.temperature);
     const topP = Number(this.els.topPInput?.value || this.state.generation.topP);
+    const topK = Number(this.els.topKInput?.value || this.state.generation.topK);
+    const minP = Number(this.els.minPInput?.value || this.state.generation.minP);
+    const typicalP = Number(this.els.typicalPInput?.value || this.state.generation.typicalP);
+    const repeatPenalty = Number(this.els.repeatPenaltyInput?.value || this.state.generation.repeatPenalty);
+    const customRuntimeJson = String(this.els.customRuntimeJsonInput?.value || "").trim();
+
+    if (customRuntimeJson) {
+      try {
+        const parsed = JSON.parse(customRuntimeJson);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          this.setRuntimeState("error", "Custom runtime JSON must be a JSON object.");
+          return;
+        }
+      } catch {
+        this.setRuntimeState("error", "Custom runtime JSON is invalid.");
+        return;
+      }
+    }
 
     this.state.promptTemplate.key = (CHAT_TEMPLATE_PRESETS[templateKey] != null || templateKey === "custom") ? templateKey : "none";
     this.state.promptTemplate.custom = customTemplate;
 
-    this.state.generation.maxTokens = Number.isFinite(maxTokens) ? Math.max(32, Math.min(4096, Math.round(maxTokens))) : 300;
+    this.state.generation.maxTokens = Number.isFinite(maxTokens) ? Math.max(16, Math.min(4096, Math.round(maxTokens))) : 300;
     this.state.generation.temperature = Number.isFinite(temperature) ? Math.max(0, Math.min(2, temperature)) : 0.4;
     this.state.generation.topP = Number.isFinite(topP) ? Math.max(0, Math.min(1, topP)) : 0.95;
+    this.state.generation.topK = Number.isFinite(topK) ? Math.max(0, Math.min(200, Math.round(topK))) : 40;
+    this.state.generation.minP = Number.isFinite(minP) ? Math.max(0, Math.min(1, minP)) : 0.05;
+    this.state.generation.typicalP = Number.isFinite(typicalP) ? Math.max(0, Math.min(1, typicalP)) : 1;
+    this.state.generation.repeatPenalty = Number.isFinite(repeatPenalty) ? Math.max(1, Math.min(2, repeatPenalty)) : 1;
+    this.state.generation.customRuntimeJson = customRuntimeJson;
 
     if (this.els.maxTokensInput) this.els.maxTokensInput.value = String(this.state.generation.maxTokens);
     if (this.els.temperatureInput) this.els.temperatureInput.value = String(this.state.generation.temperature);
     if (this.els.topPInput) this.els.topPInput.value = String(this.state.generation.topP);
+    if (this.els.topKInput) this.els.topKInput.value = String(this.state.generation.topK);
+    if (this.els.minPInput) this.els.minPInput.value = String(this.state.generation.minP);
+    if (this.els.typicalPInput) this.els.typicalPInput.value = String(this.state.generation.typicalP);
+    if (this.els.repeatPenaltyInput) this.els.repeatPenaltyInput.value = String(this.state.generation.repeatPenalty);
+    if (this.els.customRuntimeJsonInput) this.els.customRuntimeJsonInput.value = this.state.generation.customRuntimeJson;
 
     localStorage.setItem("steve.chatTemplate", this.state.promptTemplate.key);
     localStorage.setItem("steve.customTemplate", this.state.promptTemplate.custom);
     localStorage.setItem("steve.maxTokens", String(this.state.generation.maxTokens));
     localStorage.setItem("steve.temperature", String(this.state.generation.temperature));
     localStorage.setItem("steve.topP", String(this.state.generation.topP));
+    localStorage.setItem("steve.topK", String(this.state.generation.topK));
+    localStorage.setItem("steve.minP", String(this.state.generation.minP));
+    localStorage.setItem("steve.typicalP", String(this.state.generation.typicalP));
+    localStorage.setItem("steve.repeatPenalty", String(this.state.generation.repeatPenalty));
+    localStorage.setItem("steve.customRuntimeJson", this.state.generation.customRuntimeJson);
 
     this.setRuntimeState("idle", "Chat defaults saved.");
     this.schedulePersist();
@@ -1646,11 +1712,17 @@ export class SteveChatApp {
           maxTokens: this.state.generation.maxTokens,
           temperature: this.state.generation.temperature,
           topP: this.state.generation.topP,
+          topK: this.state.generation.topK,
+          minP: this.state.generation.minP,
+          typicalP: this.state.generation.typicalP,
+          repeatPenalty: this.state.generation.repeatPenalty,
+          customJson: this.state.generation.customRuntimeJson,
           onToken: (token) => {
             streamedText += token;
             chunkCount += 1;
+            completionPreviewTokens = Math.max(1, this.estimateTokenCount(streamedText));
             const elapsedSec = Math.max(0.2, (performance.now() - startedAt) / 1000);
-            liveTps = chunkCount / elapsedSec;
+            liveTps = completionPreviewTokens / elapsedSec;
             livePowerMw = this.estimateAutoPowerMw({ text, tps: liveTps, live: true });
             this.recordPowerSample(livePowerMw);
 
@@ -1662,7 +1734,6 @@ export class SteveChatApp {
               energyMw: livePowerMw,
             });
 
-            completionPreviewTokens = Math.max(completionPreviewTokens, chunkCount);
             this.renderTokenUi({
               prompt: promptPreviewTokens,
               completion: completionPreviewTokens,
@@ -1678,13 +1749,12 @@ export class SteveChatApp {
         }
 
         const elapsedMs = Math.max(1, performance.now() - startedAt);
-        const finalTps = result?.tps ?? liveTps;
+        const promptTokens = result?.promptTokens ?? this.estimateTokenCount(text);
+        const completionTokens = result?.completionTokens ?? Math.max(1, this.estimateTokenCount(streamedText));
+        const totalTokens = result?.totalTokens ?? (promptTokens + completionTokens);
+        const finalTps = completionTokens / Math.max(0.2, elapsedMs / 1000);
         const finalPowerMw = this.estimateAutoPowerMw({ text, tps: finalTps, live: true });
         const energyMWh = this.addEnergyUsage(finalPowerMw, elapsedMs);
-
-        const promptTokens = result?.promptTokens ?? this.estimateTokenCount(text);
-        const completionTokens = result?.completionTokens ?? Math.max(1, Math.round(chunkCount));
-        const totalTokens = result?.totalTokens ?? (promptTokens + completionTokens);
         this.addTokenUsage({ promptTokens, completionTokens, totalTokens });
 
         this.patchMessage(chatId, assistantIndex, {
@@ -1711,22 +1781,29 @@ export class SteveChatApp {
         maxTokens: this.state.generation.maxTokens,
         temperature: this.state.generation.temperature,
         topP: this.state.generation.topP,
+        topK: this.state.generation.topK,
+        minP: this.state.generation.minP,
+        typicalP: this.state.generation.typicalP,
+        repeatPenalty: this.state.generation.repeatPenalty,
+        customJson: this.state.generation.customRuntimeJson,
       });
 
       const elapsedMs = Math.max(1, performance.now() - startedAt);
-      const powerMw = this.estimateAutoPowerMw({ text, tps: oneShot.tps, live: true });
-      const energyMWh = this.addEnergyUsage(powerMw, elapsedMs);
 
       const promptTokens = oneShot.promptTokens ?? this.estimateTokenCount(text);
       const completionTokens = oneShot.completionTokens ?? this.estimateTokenCount(oneShot.reply);
       const totalTokens = oneShot.totalTokens ?? (promptTokens + completionTokens);
+      const effectiveTps = completionTokens / Math.max(0.2, elapsedMs / 1000);
+      const powerMw = this.estimateAutoPowerMw({ text, tps: effectiveTps, live: true });
+      const energyMWh = this.addEnergyUsage(powerMw, elapsedMs);
+
       this.addTokenUsage({ promptTokens, completionTokens, totalTokens });
 
       this.patchMessage(chatId, assistantIndex, {
         text: oneShot.reply,
         pending: false,
         error: false,
-        tps: oneShot.tps ?? null,
+        tps: effectiveTps,
         energyMw: powerMw,
         energyMWh,
       });

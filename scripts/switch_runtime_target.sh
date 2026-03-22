@@ -74,11 +74,13 @@ case "$TARGET" in
   qvac-cpu)
     need_bin "qvac cpu" "$QVAC_CPU_BIN"
     env QVAC_LLAMA_BIN="$QVAC_CPU_BIN" QVAC_LLAMA_PORT=18081 \
+      QVAC_N_GPU_LAYERS="${QVAC_N_GPU_LAYERS:-0}" LLAMA_CPP_CTX="${LLAMA_CPP_CTX:-2048}" LLAMA_CPP_THREADS="${LLAMA_CPP_THREADS:-3}" \
       "$LAUNCHER" start --backend qvac --mode cpu --index "$MODEL_INDEX"
     ;;
   qvac-vulkan)
     need_bin "qvac vulkan" "$QVAC_VK_BIN"
     env QVAC_LLAMA_BIN="$QVAC_VK_BIN" QVAC_LLAMA_PORT=18084 \
+      QVAC_N_GPU_LAYERS="${QVAC_N_GPU_LAYERS:-72}" LLAMA_CPP_CTX="${LLAMA_CPP_CTX:-2048}" LLAMA_CPP_THREADS="${LLAMA_CPP_THREADS:-3}" \
       "$LAUNCHER" start --backend qvac --mode gpu --index "$MODEL_INDEX"
     ;;
   *)

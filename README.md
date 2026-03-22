@@ -36,7 +36,10 @@ From the **Settings** button (⚙):
    - Regular: **Prebuilt / CPU build / Vulkan build (GPU)**
    - QVAC: **QVAC CPU / QVAC Vulkan (GPU)**
 3. Tap **Detect** to load local models
-4. Choose mode:
+4. Tune chat sampling/perf settings in **Chat defaults**:
+   - temperature, top-k, top-p, min-p, typical-p, repeat penalty, max tokens
+   - optional custom JSON (advanced) merged into `/v1/chat/completions`
+5. Choose mode:
    - **UI Demo** (mock Steve replies)
    - **Local Runtime** (real endpoint calls)
 

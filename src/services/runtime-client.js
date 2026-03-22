@@ -49,17 +49,73 @@ export class RuntimeClient {
     throw new Error(`Runtime not ready on ${baseUrl}${suffix}`);
   }
 
-  async completeOnce({ baseUrl, model, messages, maxTokens = 300, temperature = 0.4, topP = 0.95 }) {
+  buildRequestBody({
+    model,
+    messages,
+    maxTokens,
+    temperature,
+    topP,
+    topK,
+    minP,
+    typicalP,
+    repeatPenalty,
+    stream = false,
+    customJson = "",
+  }) {
+    const body = {
+      model,
+      messages,
+      max_tokens: maxTokens,
+      temperature,
+      top_p: topP,
+      stream,
+    };
+
+    if (topK != null) body.top_k = topK;
+    if (minP != null) body.min_p = minP;
+    if (typicalP != null) body.typical_p = typicalP;
+    if (repeatPenalty != null) body.repeat_penalty = repeatPenalty;
+
+    const extra = String(customJson || "").trim();
+    if (extra) {
+      const parsed = JSON.parse(extra);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        Object.assign(body, parsed);
+      }
+    }
+
+    return body;
+  }
+
+  async completeOnce({
+    baseUrl,
+    model,
+    messages,
+    maxTokens = 300,
+    temperature = 0.4,
+    topP = 0.95,
+    topK = 40,
+    minP = 0.05,
+    typicalP = 1,
+    repeatPenalty = 1,
+    customJson = "",
+  }) {
     const res = await fetch(`${baseUrl}/v1/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+      body: JSON.stringify(this.buildRequestBody({
         model,
         messages,
-        max_tokens: maxTokens,
+        maxTokens,
         temperature,
-        top_p: topP,
-      }),
+        topP,
+        topK,
+        minP,
+        typicalP,
+        repeatPenalty,
+        stream: false,
+        customJson,
+      })),
     });
 
     if (!res.ok) throw await this.httpError(res);
@@ -81,18 +137,28 @@ export class RuntimeClient {
     maxTokens = 300,
     temperature = 0.4,
     topP = 0.95,
+    topK = 40,
+    minP = 0.05,
+    typicalP = 1,
+    repeatPenalty = 1,
+    customJson = "",
   }) {
     const res = await fetch(`${baseUrl}/v1/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+      body: JSON.stringify(this.buildRequestBody({
         model,
         messages,
-        stream: true,
-        max_tokens: maxTokens,
+        maxTokens,
         temperature,
-        top_p: topP,
-      }),
+        topP,
+        topK,
+        minP,
+        typicalP,
+        repeatPenalty,
+        stream: true,
+        customJson,
+      })),
     });
 
     if (!res.ok) throw await this.httpError(res);
