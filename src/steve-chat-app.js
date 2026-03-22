@@ -58,12 +58,24 @@ export class SteveChatApp {
   }
 
   createInitialState() {
-    const backend = localStorage.getItem("steve.backend") || "regular";
-    const runtimeTarget = localStorage.getItem("steve.runtimeTarget") || "prebuilt";
-    const qvacRuntimeTarget = localStorage.getItem("steve.qvacRuntimeTarget") || "cpu";
+    const GPU_PROFILE_VERSION = "gpu-default-2026-03-22-v1";
+    const savedProfileVersion = localStorage.getItem("steve.gpuProfileVersion");
+    if (savedProfileVersion !== GPU_PROFILE_VERSION) {
+      // One-time migration: default Steve Chat to a known GPU-backed runtime profile.
+      localStorage.setItem("steve.backend", "qvac");
+      localStorage.setItem("steve.runtimeTarget", "vulkan");
+      localStorage.setItem("steve.qvacRuntimeTarget", "vulkan");
+      localStorage.setItem("steve.baseUrl", QVAC_RUNTIME_TARGETS.vulkan.endpoint);
+      localStorage.setItem("steve.liveMode", "1");
+      localStorage.setItem("steve.gpuProfileVersion", GPU_PROFILE_VERSION);
+    }
 
-    const selectedRuntime = REGULAR_RUNTIME_TARGETS[runtimeTarget] || REGULAR_RUNTIME_TARGETS.prebuilt;
-    const selectedQvacRuntime = QVAC_RUNTIME_TARGETS[qvacRuntimeTarget] || QVAC_RUNTIME_TARGETS.cpu;
+    const backend = localStorage.getItem("steve.backend") || "qvac";
+    const runtimeTarget = localStorage.getItem("steve.runtimeTarget") || "vulkan";
+    const qvacRuntimeTarget = localStorage.getItem("steve.qvacRuntimeTarget") || "vulkan";
+
+    const selectedRuntime = REGULAR_RUNTIME_TARGETS[runtimeTarget] || REGULAR_RUNTIME_TARGETS.vulkan;
+    const selectedQvacRuntime = QVAC_RUNTIME_TARGETS[qvacRuntimeTarget] || QVAC_RUNTIME_TARGETS.vulkan;
     const defaultBaseUrl = backend === "qvac"
       ? selectedQvacRuntime.endpoint
       : selectedRuntime.endpoint;
@@ -77,10 +89,10 @@ export class SteveChatApp {
 
     return {
       backend,
-      runtimeTarget: REGULAR_RUNTIME_TARGETS[runtimeTarget] ? runtimeTarget : "prebuilt",
-      qvacRuntimeTarget: QVAC_RUNTIME_TARGETS[qvacRuntimeTarget] ? qvacRuntimeTarget : "cpu",
+      runtimeTarget: REGULAR_RUNTIME_TARGETS[runtimeTarget] ? runtimeTarget : "vulkan",
+      qvacRuntimeTarget: QVAC_RUNTIME_TARGETS[qvacRuntimeTarget] ? qvacRuntimeTarget : "vulkan",
       baseUrl,
-      liveMode: localStorage.getItem("steve.liveMode") === "1",
+      liveMode: (localStorage.getItem("steve.liveMode") ?? "1") === "1",
       sidebarCollapsed: localStorage.getItem("steve.sidebarCollapsed") === "1",
       theme: localStorage.getItem("steve.theme") || "dark",
       showArchived: false,
@@ -145,11 +157,11 @@ export class SteveChatApp {
     }
 
     if (!REGULAR_RUNTIME_TARGETS[this.state.runtimeTarget]) {
-      this.state.runtimeTarget = "prebuilt";
+      this.state.runtimeTarget = "vulkan";
     }
 
     if (!QVAC_RUNTIME_TARGETS[this.state.qvacRuntimeTarget]) {
-      this.state.qvacRuntimeTarget = "cpu";
+      this.state.qvacRuntimeTarget = "vulkan";
     }
 
     this.els.baseUrlInput.value = this.state.baseUrl;
@@ -209,11 +221,11 @@ export class SteveChatApp {
   }
 
   getRuntimeTarget() {
-    return REGULAR_RUNTIME_TARGETS[this.state.runtimeTarget] || REGULAR_RUNTIME_TARGETS.prebuilt;
+    return REGULAR_RUNTIME_TARGETS[this.state.runtimeTarget] || REGULAR_RUNTIME_TARGETS.vulkan;
   }
 
   getQvacRuntimeTarget() {
-    return QVAC_RUNTIME_TARGETS[this.state.qvacRuntimeTarget] || QVAC_RUNTIME_TARGETS.cpu;
+    return QVAC_RUNTIME_TARGETS[this.state.qvacRuntimeTarget] || QVAC_RUNTIME_TARGETS.vulkan;
   }
 
   getBackendEndpoint() {

@@ -351,7 +351,8 @@ start() {
   fi
 
   if command -v ldd >/dev/null 2>&1; then
-    unresolved="$(LD_LIBRARY_PATH="$ld_library_path" ldd "$BIN" 2>/dev/null | awk '/=> not found/{print $1}')"
+    # ldd exits non-zero for scripts/wrappers; tolerate that and only fail on actual missing libs.
+    unresolved="$(LD_LIBRARY_PATH="$ld_library_path" ldd "$BIN" 2>/dev/null | awk '/=> not found/{print $1}' || true)"
     if [[ -n "$unresolved" ]]; then
       echo "[llama-cpp] ERROR: unresolved shared libs for $BIN" >&2
       echo "$unresolved" | sed 's/^/  - /' >&2

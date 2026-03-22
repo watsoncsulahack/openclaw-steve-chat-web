@@ -31,7 +31,7 @@ Open:
 
 From the **Settings** button (⚙):
 
-1. Set base URL (default `http://127.0.0.1:18080`)
+1. Set base URL (default `http://127.0.0.1:18084`)
 2. Pick backend (**Regular** or **QVAC**) and runtime target:
    - Regular: **Prebuilt / CPU build / Vulkan build (GPU)**
    - QVAC: **QVAC CPU / QVAC Vulkan (GPU)**
@@ -40,7 +40,8 @@ From the **Settings** button (⚙):
    - **UI Demo** (mock Steve replies)
    - **Local Runtime** (real endpoint calls)
 
-UI Demo mode is default so UX flow can be reviewed without model runtime dependency (simulated bot replies + simulated TPS values).
+Default profile now prefers **QVAC Vulkan (GPU)** + **Local Runtime** for on-device acceleration testing.
+You can switch back to UI Demo any time for pure UX review.
 
 ## Local llama.cpp quick start
 

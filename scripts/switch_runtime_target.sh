@@ -10,11 +10,11 @@ MODEL_INDEX="${MODEL_INDEX:-1}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LAUNCHER="$ROOT_DIR/scripts/llama_cpp_local.sh"
 
-REG_PREBUILT_BIN="${REG_PREBUILT_BIN:-/usr/bin/llama-server}"
+REG_PREBUILT_BIN="${REG_PREBUILT_BIN:-/data/data/com.termux/files/usr/bin/llama-server}"
 REG_CPU_BIN="${REG_CPU_BIN:-/tmp/llama-b8419/build-openclaw-cpu-nossl/bin/llama-server}"
 REG_VK_BIN="${REG_VK_BIN:-/tmp/llama-org-phase2b/out/llama-org-b8419-linux-arm64-vulkan/llama-server}"
-QVAC_CPU_BIN="${QVAC_CPU_BIN:-/root/.openclaw/workspace/artifacts/qvac-mini-phase2a-run-23376507332/qvac-cpu/llama-server}"
-QVAC_VK_BIN="${QVAC_VK_BIN:-/root/.openclaw/workspace/qvac-fabric-llm.cpp/build-vulkan-gcc/bin/llama-server}"
+QVAC_CPU_BIN="${QVAC_CPU_BIN:-/data/data/com.termux/files/home/openclaw-binaries/qvac-run-23390877295/android-bionic-cpu/llama-server-wrapper.sh}"
+QVAC_VK_BIN="${QVAC_VK_BIN:-/data/data/com.termux/files/home/openclaw-binaries/qvac-run-23392440400/android-bionic-vulkan/llama-server-wrapper.sh}"
 
 usage() {
   cat <<EOF
