@@ -37,6 +37,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             libvulkan-dev \
+            vulkan-headers \
             glslc
 
       - name: Setup Android SDK/NDK
@@ -56,6 +57,21 @@ jobs:
           git clone --depth 1 --branch "$QVAC_REF" https://github.com/tetherto/qvac-fabric-llm.cpp.git qvac-src
           cd qvac-src
           git rev-parse HEAD
+
+      - name: Ensure Vulkan C++ header is available
+        if: ${{ matrix.variant == 'vulkan' }}
+        run: |
+          set -euo pipefail
+          TARGET_DIR="qvac-src/ggml/src/ggml-vulkan/vulkan_cpp_wrapper/include/vulkan"
+          mkdir -p "$TARGET_DIR"
+          if [ ! -f "$TARGET_DIR/vulkan.hpp" ]; then
+            if [ -f /usr/include/vulkan/vulkan.hpp ]; then
+              cp -f /usr/include/vulkan/vulkan.hpp "$TARGET_DIR/vulkan.hpp"
+            else
+              echo "vulkan.hpp not found in /usr/include/vulkan" >&2
+              exit 1
+            fi
+          fi
 
       - name: Configure Android arm64 build
         working-directory: qvac-src
