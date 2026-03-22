@@ -1391,11 +1391,22 @@ export class SteveChatApp {
     this.state.tokens.total += t;
   }
 
-  renderTokenUi() {
+  renderTokenUi(preview = null) {
     if (!this.els.sessionTokenTotal || !this.els.sessionPromptTokens || !this.els.sessionCompletionTokens) return;
-    this.els.sessionTokenTotal.textContent = String(this.state.tokens.total || 0);
-    this.els.sessionPromptTokens.textContent = String(this.state.tokens.prompt || 0);
-    this.els.sessionCompletionTokens.textContent = String(this.state.tokens.completion || 0);
+
+    let prompt = Number(this.state.tokens.prompt || 0);
+    let completion = Number(this.state.tokens.completion || 0);
+    let total = Number(this.state.tokens.total || 0);
+
+    if (preview && typeof preview === "object") {
+      prompt += Math.max(0, Math.round(Number(preview.prompt || 0)));
+      completion += Math.max(0, Math.round(Number(preview.completion || 0)));
+      total += Math.max(0, Math.round(Number(preview.total || 0)));
+    }
+
+    this.els.sessionTokenTotal.textContent = String(total);
+    this.els.sessionPromptTokens.textContent = String(prompt);
+    this.els.sessionCompletionTokens.textContent = String(completion);
   }
 
   estimateAutoPowerMw({ text = "", tps = null, live = false }) {
@@ -1465,7 +1476,7 @@ export class SteveChatApp {
 
     // Keep only a recent window, then re-normalize again so truncation never breaks
     // user/assistant alternation (Gemma chat template is strict and returns HTTP 500).
-    const windowed = normalized.slice(-24);
+    const windowed = normalized.slice(-16);
     const safe = [];
     for (const msg of windowed) {
       if (safe.length === 0) {
@@ -1482,7 +1493,23 @@ export class SteveChatApp {
       }
     }
 
-    return safe;
+    // Additional latency guard: cap prompt history by estimated token budget so
+    // first-token latency doesn't explode on long mobile chat threads.
+    const tokenBudget = 420;
+    const compact = [];
+    let estimated = 0;
+
+    for (let i = safe.length - 1; i >= 0; i -= 1) {
+      const msg = safe[i];
+      const cost = this.estimateTokenCount(msg.content) + 4;
+      if (compact.length >= 2 && (estimated + cost) > tokenBudget) break;
+      compact.unshift(msg);
+      estimated += cost;
+    }
+
+    while (compact.length && compact[0].role !== "user") compact.shift();
+
+    return compact.length ? compact : safe.slice(-2);
   }
 
   speakText(text) {
@@ -1601,7 +1628,16 @@ export class SteveChatApp {
         let chunkCount = 0;
         let liveTps = null;
         let livePowerMw = null;
+        const promptPreviewTokens = this.estimateTokenCount(text);
+        let completionPreviewTokens = 0;
         const startedAt = performance.now();
+
+        // Show in-progress token counters immediately instead of waiting for stream end.
+        this.renderTokenUi({
+          prompt: promptPreviewTokens,
+          completion: 0,
+          total: promptPreviewTokens,
+        });
 
         const result = await this.runtimeClient.streamChat({
           baseUrl: this.state.baseUrl,
@@ -1624,6 +1660,13 @@ export class SteveChatApp {
               error: false,
               tps: liveTps,
               energyMw: livePowerMw,
+            });
+
+            completionPreviewTokens = Math.max(completionPreviewTokens, chunkCount);
+            this.renderTokenUi({
+              prompt: promptPreviewTokens,
+              completion: completionPreviewTokens,
+              total: promptPreviewTokens + completionPreviewTokens,
             });
 
             if (chunkCount % 4 === 0) this.renderPowerUi();
@@ -1697,6 +1740,7 @@ export class SteveChatApp {
         pending: false,
         error: true,
       });
+      this.renderTokenUi();
       this.setRuntimeState("error", `Live call failed: ${err.message}`);
     }
   }
