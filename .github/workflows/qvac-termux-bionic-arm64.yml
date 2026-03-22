@@ -57,20 +57,17 @@ jobs:
           cd qvac-src
           git rev-parse HEAD
 
-      - name: Ensure Vulkan C++ header is available
+      - name: Ensure Vulkan C++ headers are available
         if: ${{ matrix.variant == 'vulkan' }}
         run: |
           set -euo pipefail
           TARGET_DIR="qvac-src/ggml/src/ggml-vulkan/vulkan_cpp_wrapper/include/vulkan"
           mkdir -p "$TARGET_DIR"
-          if [ ! -f "$TARGET_DIR/vulkan.hpp" ]; then
-            if [ -f /usr/include/vulkan/vulkan.hpp ]; then
-              cp -f /usr/include/vulkan/vulkan.hpp "$TARGET_DIR/vulkan.hpp"
-            else
-              echo "vulkan.hpp not found in /usr/include/vulkan" >&2
-              exit 1
-            fi
+          if ! ls /usr/include/vulkan/*.hpp >/dev/null 2>&1; then
+            echo "Vulkan C++ headers (*.hpp) not found in /usr/include/vulkan" >&2
+            exit 1
           fi
+          cp -f /usr/include/vulkan/*.hpp "$TARGET_DIR/"
 
       - name: Configure Android arm64 build
         working-directory: qvac-src
