@@ -127,6 +127,7 @@ export class SteveChatApp {
       },
       runtimeState: "idle",
       runtimeStatusText: "Runtime ready.",
+      runtimeErrorText: "",
       localLlamaConnected: false,
       power: {
         sessionEnergyMWh: 0,
@@ -256,6 +257,9 @@ export class SteveChatApp {
       this.state.promptTemplate.key = "none";
     }
     this.state.promptTemplate.custom = String(this.state.promptTemplate.custom || "");
+
+    this.state.runtimeStatusText = String(this.state.runtimeStatusText || "Runtime ready.");
+    this.state.runtimeErrorText = String(this.state.runtimeErrorText || "");
 
     this.ensureModelProfilesPresent();
 
@@ -389,6 +393,13 @@ export class SteveChatApp {
   setRuntimeState(kind, text) {
     this.state.runtimeState = kind;
     if (text) this.state.runtimeStatusText = text;
+
+    if (kind === "error") {
+      this.state.runtimeErrorText = String(text || this.state.runtimeStatusText || "Runtime error");
+    } else {
+      this.state.runtimeErrorText = "";
+    }
+
     this.renderModeUi();
   }
 
@@ -569,6 +580,8 @@ export class SteveChatApp {
       return null;
     };
 
+    let gestureCommitted = false;
+
     const begin = (clientX, clientY, pid = null) => {
       if (active) return false;
       if (this.els.settingsSheet.classList.contains("show") || this.els.modelSheet.classList.contains("show")) return false;
@@ -581,6 +594,7 @@ export class SteveChatApp {
       startX = clientX;
       startY = clientY;
       gesture = nextGesture;
+      gestureCommitted = false;
 
       if (host.setPointerCapture && pointerId != null) {
         try { host.setPointerCapture(pointerId); } catch { /* ignore */ }
@@ -589,25 +603,37 @@ export class SteveChatApp {
       return true;
     };
 
-    const complete = (clientX, clientY, pid = null) => {
-      if (!active) return;
-      if (pointerId != null && pid != null && pid !== pointerId) return;
+    const maybeCommit = (clientX, clientY, pid = null) => {
+      if (!active || gestureCommitted) return false;
+      if (pointerId != null && pid != null && pid !== pointerId) return false;
 
       const dx = clientX - startX;
       const dy = clientY - startY;
-      const horizontal = Math.abs(dx) >= Math.abs(dy) * 0.65;
+      const horizontal = Math.abs(dx) >= Math.abs(dy) * 0.35;
+      if (!horizontal || dx <= threshold) return false;
 
-      if (horizontal && dx > threshold) {
-        if (gesture === "open") this.toggleDrawer(true);
-        if (gesture === "close") this.toggleDrawer(false);
+      if (gesture === "open") {
+        this.toggleDrawer(true);
+      } else if (gesture === "close") {
+        this.toggleDrawer(false);
       }
 
+      gestureCommitted = true;
+      return true;
+    };
+
+    const complete = (clientX, clientY, pid = null) => {
+      maybeCommit(clientX, clientY, pid);
       finish();
     };
 
     const onDown = (e) => {
       if (e.pointerType === "mouse" && e.button !== 0) return;
       begin(e.clientX, e.clientY, e.pointerId);
+    };
+
+    const onMove = (e) => {
+      maybeCommit(e.clientX, e.clientY, e.pointerId);
     };
 
     const onUp = (e) => {
@@ -620,6 +646,12 @@ export class SteveChatApp {
       begin(t.clientX, t.clientY, null);
     };
 
+    const onTouchMove = (e) => {
+      const t = e.changedTouches?.[0];
+      if (!t) return;
+      maybeCommit(t.clientX, t.clientY, null);
+    };
+
     const onTouchEnd = (e) => {
       const t = e.changedTouches?.[0];
       if (!t) return;
@@ -629,14 +661,18 @@ export class SteveChatApp {
     const onCancel = () => finish();
 
     host.addEventListener("pointerdown", onDown, { passive: true });
+    host.addEventListener("pointermove", onMove, { passive: true });
     host.addEventListener("pointerup", onUp, { passive: true });
     host.addEventListener("pointercancel", onCancel, { passive: true });
     host.addEventListener("lostpointercapture", onCancel, { passive: true });
     host.addEventListener("touchstart", onTouchStart, { passive: true });
+    host.addEventListener("touchmove", onTouchMove, { passive: true });
     host.addEventListener("touchend", onTouchEnd, { passive: true });
     host.addEventListener("touchcancel", onCancel, { passive: true });
+    window.addEventListener("pointermove", onMove, { passive: true });
     window.addEventListener("pointerup", onUp, { passive: true });
     window.addEventListener("pointercancel", onCancel, { passive: true });
+    window.addEventListener("touchmove", onTouchMove, { passive: true });
     window.addEventListener("touchend", onTouchEnd, { passive: true });
     window.addEventListener("touchcancel", onCancel, { passive: true });
     window.addEventListener("blur", onCancel, { passive: true });
@@ -645,14 +681,18 @@ export class SteveChatApp {
     this.drawerDrag = {
       cleanup: () => {
         host.removeEventListener("pointerdown", onDown);
+        host.removeEventListener("pointermove", onMove);
         host.removeEventListener("pointerup", onUp);
         host.removeEventListener("pointercancel", onCancel);
         host.removeEventListener("lostpointercapture", onCancel);
         host.removeEventListener("touchstart", onTouchStart);
+        host.removeEventListener("touchmove", onTouchMove);
         host.removeEventListener("touchend", onTouchEnd);
         host.removeEventListener("touchcancel", onCancel);
+        window.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onUp);
         window.removeEventListener("pointercancel", onCancel);
+        window.removeEventListener("touchmove", onTouchMove);
         window.removeEventListener("touchend", onTouchEnd);
         window.removeEventListener("touchcancel", onCancel);
         window.removeEventListener("blur", onCancel);
@@ -1261,7 +1301,11 @@ export class SteveChatApp {
       ? `Local Runtime mode (${this.getBackendLabel()}) sends prompts with chat history to /v1/chat/completions. ${chatDefaults}.`
       : `UI Demo mode uses mock Steve replies for flow testing. ${chatDefaults}.`;
 
-    this.els.runtimeStatus.textContent = this.state.runtimeStatusText || "Runtime: idle.";
+    const rawStatus = String(this.state.runtimeStatusText || "Runtime: idle.");
+    const clippedStatus = this.state.runtimeState === "error" && rawStatus.length > 140
+      ? `${rawStatus.slice(0, 140)}…`
+      : rawStatus;
+    this.els.runtimeStatus.textContent = clippedStatus;
 
     if (this.els.statusDot) {
       if (!this.state.liveMode) {
@@ -1279,6 +1323,21 @@ export class SteveChatApp {
     this.renderRuntimeTargetUi();
     this.renderPowerUi();
     this.renderLocalLlamaButton();
+    this.renderRuntimeErrorPanel();
+  }
+
+  renderRuntimeErrorPanel() {
+    if (!this.els.runtimeErrorPanel || !this.els.runtimeErrorText) return;
+
+    const full = String(this.state.runtimeErrorText || "").trim();
+    if (!full) {
+      this.els.runtimeErrorPanel.classList.add("hidden");
+      this.els.runtimeErrorText.textContent = "";
+      return;
+    }
+
+    this.els.runtimeErrorPanel.classList.remove("hidden");
+    this.els.runtimeErrorText.textContent = full;
   }
 
   renderLocalLlamaButton() {
@@ -1495,9 +1554,9 @@ export class SteveChatApp {
     this.setRuntimeState("working", `Detecting models on ${this.state.baseUrl} (waiting for runtime warmup if needed)...`);
     try {
       const listed = await this.runtimeClient.fetchModelsWithRetry(this.state.baseUrl, {
-        timeoutMs: 26000,
-        intervalMs: 800,
-        requestTimeoutMs: 3500,
+        timeoutMs: 7000,
+        intervalMs: 700,
+        requestTimeoutMs: 1800,
       });
 
       this.ensureModelProfilesPresent(listed);
@@ -1572,6 +1631,47 @@ export class SteveChatApp {
     return /Runtime not ready|Failed to fetch|NetworkError|HTTP\s*503|Loading model|No models returned|Empty reply|ECONN|timeout|fetch/i.test(msg);
   }
 
+  async tryAutoRecoverLocalRuntime({ baseUrl = "", signal = null, reason = "" } = {}) {
+    const endpoint = String(baseUrl || "").trim();
+    if (!endpoint || endpoint !== this.getBackendEndpoint()) return false;
+
+    const profile = MODEL_PROFILES[this.state.modelProfile] || MODEL_PROFILES.e4b;
+    const target = this.state.backend === "qvac" ? "qvac-vulkan" : "reg-prebuilt";
+
+    try {
+      this.setRuntimeState("working", `Runtime seems down (${reason}). Attempting auto-start on ${this.getBackendLabel()}...`);
+      const switched = await this.runtimeClient.switchLocalRuntime({
+        target,
+        modelIndex: profile.modelIndex,
+        siteId: "steve-chat",
+      });
+
+      const nextEndpoint = switched?.endpoint || this.getBackendEndpoint();
+      this.state.baseUrl = nextEndpoint;
+      this.els.baseUrlInput.value = nextEndpoint;
+      localStorage.setItem("steve.baseUrl", nextEndpoint);
+
+      const listed = await this.runtimeClient.fetchModelsWithRetry(nextEndpoint, {
+        timeoutMs: 22000,
+        intervalMs: 800,
+        requestTimeoutMs: 3200,
+        signal,
+      });
+
+      this.ensureModelProfilesPresent(listed);
+      this.renderModels();
+      this.syncModelLabel();
+      this.state.localLlamaConnected = true;
+      this.renderLocalLlamaButton();
+      this.setRuntimeState("ok", `Connected ${this.getBackendLabel()} (auto-recovered).`);
+      await this.notifyGpuFallbackIfNeeded();
+      this.schedulePersist();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async withRuntimeRetry(taskFn, {
     signal = null,
     baseUrl = "",
@@ -1581,6 +1681,7 @@ export class SteveChatApp {
     phaseLabel = "Runtime call",
   } = {}) {
     let lastErr = null;
+    let attemptedAutoRecover = false;
 
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
@@ -1598,6 +1699,11 @@ export class SteveChatApp {
         if (!canRetry) throw err;
 
         this.setRuntimeState("working", `${phaseLabel} hit transient runtime issue (${msg}). Retrying...`);
+
+        if (!attemptedAutoRecover && baseUrl) {
+          attemptedAutoRecover = true;
+          await this.tryAutoRecoverLocalRuntime({ baseUrl, signal, reason: msg });
+        }
 
         if (baseUrl) {
           try {

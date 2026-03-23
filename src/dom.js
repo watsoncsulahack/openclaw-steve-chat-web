@@ -25,6 +25,8 @@ export function getDomRefs() {
     baseUrlInput: $("baseUrlInput"),
     modeHint: $("modeHint"),
     runtimeStatus: $("runtimeStatus"),
+    runtimeErrorPanel: $("runtimeErrorPanel"),
+    runtimeErrorText: $("runtimeErrorText"),
     backendRegularBtn: $("backendRegularBtn"),
     backendQvacBtn: $("backendQvacBtn"),
     runtimePrebuiltBtn: $("runtimePrebuiltBtn"),
