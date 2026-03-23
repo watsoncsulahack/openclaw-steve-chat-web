@@ -1575,8 +1575,8 @@ export class SteveChatApp {
   async withRuntimeRetry(taskFn, {
     signal = null,
     baseUrl = "",
-    attempts = 2,
-    warmupTimeoutMs = 16000,
+    attempts = 4,
+    warmupTimeoutMs = 22000,
     warmupIntervalMs = 700,
     phaseLabel = "Runtime call",
   } = {}) {
@@ -1612,7 +1612,9 @@ export class SteveChatApp {
           }
         }
 
-        await this.runtimeClient.sleep(220, signal);
+        const loadingModel = /Loading model|HTTP\s*503|Service Unavailable/i.test(msg);
+        const backoffMs = loadingModel ? (2200 + attempt * 1800) : 380;
+        await this.runtimeClient.sleep(backoffMs, signal);
       }
     }
 
@@ -2036,7 +2038,7 @@ export class SteveChatApp {
         }), {
           signal,
           baseUrl: this.state.baseUrl,
-          attempts: 2,
+          attempts: 4,
           phaseLabel: "Stream call",
         });
 
@@ -2058,7 +2060,7 @@ export class SteveChatApp {
           }), {
             signal,
             baseUrl: this.state.baseUrl,
-            attempts: 2,
+            attempts: 4,
             phaseLabel: "Fallback completion",
           });
 
@@ -2119,7 +2121,7 @@ export class SteveChatApp {
       }), {
         signal,
         baseUrl: this.state.baseUrl,
-        attempts: 2,
+        attempts: 4,
         phaseLabel: "Completion call",
       });
 
