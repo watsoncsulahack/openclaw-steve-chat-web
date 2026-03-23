@@ -51,6 +51,8 @@ export class SteveChatApp {
     this.persistTimer = null;
     this.recognition = null;
     this.drawerDrag = null;
+    this.activeInferenceController = null;
+    this.inferenceRunning = false;
 
     this.state = this.storage.load(this.createInitialState());
   }
@@ -379,8 +381,49 @@ export class SteveChatApp {
     this.renderModeUi();
   }
 
+  renderSendButtonState() {
+    if (!this.els.sendBtn) return;
+    if (!this.inferenceRunning) {
+      this.els.sendBtn.title = "Send message";
+      this.els.sendBtn.setAttribute("aria-label", "Send message");
+      this.els.sendBtn.classList.remove("stop-mode");
+      this.els.sendBtn.innerHTML = `
+        <svg class="send-glyph" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 12h14" />
+          <path d="M12 5l8 7-8 7" />
+        </svg>
+      `;
+      return;
+    }
+
+    this.els.sendBtn.title = "Stop inference";
+    this.els.sendBtn.setAttribute("aria-label", "Stop inference");
+    this.els.sendBtn.classList.add("stop-mode");
+    this.els.sendBtn.innerHTML = `<span class="stop-glyph" aria-hidden="true">■</span>`;
+  }
+
+  startInferenceController() {
+    this.activeInferenceController?.abort?.();
+    this.activeInferenceController = new AbortController();
+    this.inferenceRunning = true;
+    this.renderSendButtonState();
+    return this.activeInferenceController;
+  }
+
+  finishInferenceController() {
+    this.activeInferenceController = null;
+    this.inferenceRunning = false;
+    this.renderSendButtonState();
+  }
+
+  stopCurrentInference() {
+    if (!this.inferenceRunning) return;
+    this.setRuntimeState("idle", "Stopping inference...");
+    this.activeInferenceController?.abort?.();
+  }
+
   bindEvents() {
-    this.els.menuBtn.addEventListener("click", () => this.toggleSettingsSheet(true));
+    this.els.menuBtn.addEventListener("click", () => this.toggleDrawer(true));
     this.els.closeDrawerBtn.addEventListener("click", () => this.toggleDrawer(false));
     this.els.backdrop.addEventListener("click", () => {
       this.toggleDrawer(false);
@@ -433,7 +476,13 @@ export class SteveChatApp {
     this.els.chatTemplateSelect?.addEventListener("change", () => this.renderChatDefaultsUi());
     this.els.saveChatDefaultsBtn?.addEventListener("click", () => this.saveChatDefaults());
 
-    this.els.sendBtn.addEventListener("click", () => this.onSend());
+    this.els.sendBtn.addEventListener("click", () => {
+      if (this.inferenceRunning) {
+        this.stopCurrentInference();
+        return;
+      }
+      this.onSend();
+    });
     this.els.messageInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") this.onSend();
     });
@@ -448,7 +497,7 @@ export class SteveChatApp {
       window.setTimeout(() => this.ensureComposerVisible(), 120);
     });
 
-    // Drawer gesture disabled for simplified settings-first mobile UX.
+    this.bindDrawerDragGesture();
   }
 
   bindDrawerDragGesture() {
@@ -764,6 +813,7 @@ export class SteveChatApp {
     this.renderPowerUi();
     this.renderTokenUi();
     this.renderLocalLlamaButton();
+    this.renderSendButtonState();
   }
 
   renderChatSearchState() {
@@ -1667,6 +1717,11 @@ export class SteveChatApp {
   }
 
   async onSend() {
+    if (this.inferenceRunning) {
+      this.stopCurrentInference();
+      return;
+    }
+
     const text = (this.els.messageInput.value || "").trim();
     if (!text) return;
 
@@ -1714,11 +1769,15 @@ export class SteveChatApp {
 
     const assistantIndex = this.appendMessage("steve", "", { pending: true }, chatId);
     const messages = this.applyTemplateToMessages(this.buildRuntimeMessages(chatId));
+    const controller = this.startInferenceController();
+    const signal = controller.signal;
+    let streamedText = "";
 
     try {
       const readyModels = await this.runtimeClient.fetchModelsWithRetry(this.state.baseUrl, {
         timeoutMs: 30000,
         intervalMs: 800,
+        signal,
       });
 
       this.ensureModelProfilesPresent(readyModels);
@@ -1735,7 +1794,6 @@ export class SteveChatApp {
       this.syncModelLabel();
 
       if (this.state.streamMode) {
-        let streamedText = "";
         let chunkCount = 0;
         let liveTps = null;
         let livePowerMw = null;
@@ -1743,7 +1801,6 @@ export class SteveChatApp {
         let completionPreviewTokens = 0;
         const startedAt = performance.now();
 
-        // Show in-progress token counters immediately instead of waiting for stream end.
         this.renderTokenUi({
           prompt: promptPreviewTokens,
           completion: 0,
@@ -1762,6 +1819,7 @@ export class SteveChatApp {
           typicalP: this.state.generation.typicalP,
           repeatPenalty: this.state.generation.repeatPenalty,
           customJson: this.state.generation.customRuntimeJson,
+          signal,
           onToken: (token) => {
             streamedText += token;
             chunkCount += 1;
@@ -1831,6 +1889,7 @@ export class SteveChatApp {
         typicalP: this.state.generation.typicalP,
         repeatPenalty: this.state.generation.repeatPenalty,
         customJson: this.state.generation.customRuntimeJson,
+        signal,
       });
 
       const elapsedMs = Math.max(1, performance.now() - startedAt);
@@ -1857,6 +1916,19 @@ export class SteveChatApp {
       this.speakText(oneShot.reply);
       this.setRuntimeState("ok", `Live response complete. Session energy ${this.formatEnergyMWh(this.state.power.sessionEnergyMWh)}.`);
     } catch (err) {
+      const aborted = err?.name === "AbortError" || /aborted|abort/i.test(String(err?.message || ""));
+      if (aborted) {
+        const stoppedText = streamedText.trim() || "(generation stopped)";
+        this.patchMessage(chatId, assistantIndex, {
+          text: stoppedText,
+          pending: false,
+          error: false,
+        });
+        this.renderTokenUi();
+        this.setRuntimeState("idle", "Inference stopped.");
+        return;
+      }
+
       this.patchMessage(chatId, assistantIndex, {
         text: `Live call failed: ${err.message}`,
         pending: false,
@@ -1864,6 +1936,8 @@ export class SteveChatApp {
       });
       this.renderTokenUi();
       this.setRuntimeState("error", `Live call failed: ${err.message}`);
+    } finally {
+      this.finishInferenceController();
     }
   }
 }

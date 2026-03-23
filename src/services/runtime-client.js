@@ -1,6 +1,22 @@
 export class RuntimeClient {
-  sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+  sleep(ms, signal = null) {
+    return new Promise((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(new DOMException("Aborted", "AbortError"));
+        return;
+      }
+      const timer = setTimeout(() => {
+        cleanup();
+        resolve();
+      }, ms);
+      const onAbort = () => {
+        clearTimeout(timer);
+        cleanup();
+        reject(new DOMException("Aborted", "AbortError"));
+      };
+      const cleanup = () => signal?.removeEventListener?.("abort", onAbort);
+      signal?.addEventListener?.("abort", onAbort, { once: true });
+    });
   }
 
   async fetchLlamaRuntimeStatus(port) {
@@ -17,8 +33,8 @@ export class RuntimeClient {
     }
   }
 
-  async fetchModels(baseUrl) {
-    const res = await fetch(`${baseUrl}/v1/models`);
+  async fetchModels(baseUrl, { signal = null } = {}) {
+    const res = await fetch(`${baseUrl}/v1/models`, { signal });
     if (!res.ok) throw await this.httpError(res);
 
     const data = await res.json();
@@ -45,13 +61,14 @@ export class RuntimeClient {
     return dedup;
   }
 
-  async fetchModelsWithRetry(baseUrl, { timeoutMs = 45000, intervalMs = 900 } = {}) {
+  async fetchModelsWithRetry(baseUrl, { timeoutMs = 45000, intervalMs = 900, signal = null } = {}) {
     const started = Date.now();
     let lastErr = null;
 
     while ((Date.now() - started) < timeoutMs) {
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
       try {
-        const models = await this.fetchModels(baseUrl);
+        const models = await this.fetchModels(baseUrl, { signal });
         if (models.length > 0) return models;
         lastErr = new Error("No models returned (runtime may still be loading)");
       } catch (err) {
@@ -60,7 +77,7 @@ export class RuntimeClient {
         const transient = /HTTP\s*503|Loading model|No models returned|Failed to fetch|NetworkError|Empty reply/i.test(msg);
         if (!transient) throw err;
       }
-      await this.sleep(intervalMs);
+      await this.sleep(intervalMs, signal);
     }
 
     const suffix = lastErr?.message ? `: ${lastErr.message}` : "";
@@ -117,10 +134,12 @@ export class RuntimeClient {
     typicalP = 1,
     repeatPenalty = 1,
     customJson = "",
+    signal = null,
   }) {
     const res = await fetch(`${baseUrl}/v1/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal,
       body: JSON.stringify(this.buildRequestBody({
         model,
         messages,
@@ -160,10 +179,12 @@ export class RuntimeClient {
     typicalP = 1,
     repeatPenalty = 1,
     customJson = "",
+    signal = null,
   }) {
     const res = await fetch(`${baseUrl}/v1/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal,
       body: JSON.stringify(this.buildRequestBody({
         model,
         messages,

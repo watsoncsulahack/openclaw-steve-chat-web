@@ -739,6 +739,18 @@ body.theme-light .swipe-cue-right {
   padding: 0;
 }
 
+.composer-send.stop-mode {
+  background: #8a1a1a;
+  border-color: #cf4b4b;
+}
+
+.stop-glyph {
+  color: #f7f9ff;
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 700;
+}
+
 .send-glyph {
   width: 25px;
   height: 25px;
