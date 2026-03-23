@@ -33,8 +33,28 @@ export class RuntimeClient {
     }
   }
 
-  async fetchModels(baseUrl, { signal = null } = {}) {
-    const res = await fetch(`${baseUrl}/v1/models`, { signal });
+  async fetchModels(baseUrl, { signal = null, requestTimeoutMs = 3500 } = {}) {
+    const controller = new AbortController();
+    const timeout = Math.max(800, Number(requestTimeoutMs) || 3500);
+    const timer = setTimeout(() => controller.abort(), timeout);
+
+    const onAbort = () => controller.abort();
+    signal?.addEventListener?.("abort", onAbort, { once: true });
+
+    let res;
+    try {
+      res = await fetch(`${baseUrl}/v1/models`, { signal: controller.signal });
+    } catch (err) {
+      const abortedByCaller = Boolean(signal?.aborted);
+      if (err?.name === "AbortError" && !abortedByCaller) {
+        throw new Error(`Model list request timeout (${timeout}ms)`);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener?.("abort", onAbort);
+    }
+
     if (!res.ok) throw await this.httpError(res);
 
     const data = await res.json();
@@ -61,14 +81,14 @@ export class RuntimeClient {
     return dedup;
   }
 
-  async fetchModelsWithRetry(baseUrl, { timeoutMs = 45000, intervalMs = 900, signal = null } = {}) {
+  async fetchModelsWithRetry(baseUrl, { timeoutMs = 45000, intervalMs = 900, requestTimeoutMs = 3500, signal = null } = {}) {
     const started = Date.now();
     let lastErr = null;
 
     while ((Date.now() - started) < timeoutMs) {
       if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
       try {
-        const models = await this.fetchModels(baseUrl, { signal });
+        const models = await this.fetchModels(baseUrl, { signal, requestTimeoutMs });
         if (models.length > 0) return models;
         lastErr = new Error("No models returned (runtime may still be loading)");
       } catch (err) {

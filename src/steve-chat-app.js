@@ -557,7 +557,9 @@ export class SteveChatApp {
       const insideDrawer = clientX <= drawerRect.right;
 
       if (wide) {
+        const mode = this.getWideDrawerMode();
         if (drawerIsOpen && nearDrawerRightEdge) return "close";
+        if (mode === "preview" && insideDrawer) return "open";
         if (!drawerIsOpen && nearLeftEdge) return "open";
         return null;
       }
@@ -739,10 +741,19 @@ export class SteveChatApp {
 
   toggleSidebarCollapsed() {
     if (!this.isWide()) return;
-    const order = ["open", "preview", "closed"];
     const mode = this.getWideDrawerMode();
-    const next = order[(order.indexOf(mode) + 1) % order.length];
-    this.setWideDrawerMode(next);
+
+    if (mode === "open") {
+      this.setWideDrawerMode("preview");
+      return;
+    }
+
+    if (mode === "preview") {
+      this.setWideDrawerMode("open");
+      return;
+    }
+
+    this.setWideDrawerMode("open");
   }
 
   syncViewport() {
@@ -1484,8 +1495,9 @@ export class SteveChatApp {
     this.setRuntimeState("working", `Detecting models on ${this.state.baseUrl} (waiting for runtime warmup if needed)...`);
     try {
       const listed = await this.runtimeClient.fetchModelsWithRetry(this.state.baseUrl, {
-        timeoutMs: 45000,
-        intervalMs: 900,
+        timeoutMs: 26000,
+        intervalMs: 800,
+        requestTimeoutMs: 3500,
       });
 
       this.ensureModelProfilesPresent(listed);
@@ -1501,8 +1513,50 @@ export class SteveChatApp {
     } catch (err) {
       this.state.localLlamaConnected = false;
       const msg = String(err?.message || "Unknown error");
+      const localEndpoint = this.state.baseUrl === this.getBackendEndpoint();
+      const transient = this.isTransientRuntimeError(msg);
 
-      if (this.state.backend === "qvac" && /NetworkError|Failed to fetch|fetch/i.test(msg)) {
+      // Auto-recovery: if selected local backend endpoint is down, try starting via supervisor API.
+      if (localEndpoint && transient) {
+        const profile = MODEL_PROFILES[this.state.modelProfile] || MODEL_PROFILES.e4b;
+        const target = this.state.backend === "qvac" ? "qvac-vulkan" : "reg-prebuilt";
+
+        try {
+          this.setRuntimeState("working", `Runtime unreachable, attempting auto-start (${this.getBackendLabel()}, ${profile.name})...`);
+          const switched = await this.runtimeClient.switchLocalRuntime({
+            target,
+            modelIndex: profile.modelIndex,
+            siteId: "steve-chat",
+          });
+
+          const endpoint = switched?.endpoint || this.getBackendEndpoint();
+          this.state.baseUrl = endpoint;
+          this.els.baseUrlInput.value = endpoint;
+          localStorage.setItem("steve.baseUrl", endpoint);
+
+          const listed = await this.runtimeClient.fetchModelsWithRetry(endpoint, {
+            timeoutMs: 28000,
+            intervalMs: 800,
+            requestTimeoutMs: 3500,
+          });
+
+          this.ensureModelProfilesPresent(listed);
+          this.renderModels();
+          this.syncModelLabel();
+          this.state.localLlamaConnected = true;
+          this.renderLocalLlamaButton();
+          this.setRuntimeState("ok", `Connected ${this.getBackendLabel()} (auto-started runtime).`);
+          await this.notifyGpuFallbackIfNeeded();
+          this.schedulePersist();
+          return;
+        } catch (autoErr) {
+          const autoMsg = String(autoErr?.message || autoErr || "Unknown auto-start error");
+          this.setRuntimeState("error", `Detect failed: ${msg}. Auto-start also failed: ${autoMsg}`);
+          return;
+        }
+      }
+
+      if (this.state.backend === "qvac" && /NetworkError|Failed to fetch|fetch|timeout/i.test(msg)) {
         this.setRuntimeState(
           "error",
           `Detect failed: ${this.getQvacRuntimeTarget().label} not reachable on ${this.getBackendEndpoint()}. Start qvac server first (set QVAC_LLAMA_BIN + QVAC_LLAMA_PORT, then scripts/llama_cpp_local.sh start --backend qvac --mode gpu --index 1 for Vulkan testing).`,
@@ -1550,6 +1604,7 @@ export class SteveChatApp {
             await this.runtimeClient.fetchModelsWithRetry(baseUrl, {
               timeoutMs: warmupTimeoutMs,
               intervalMs: warmupIntervalMs,
+              requestTimeoutMs: 3200,
               signal,
             });
           } catch {
@@ -1898,6 +1953,7 @@ export class SteveChatApp {
         readyModels = await this.runtimeClient.fetchModelsWithRetry(this.state.baseUrl, {
           timeoutMs: 8000,
           intervalMs: 700,
+          requestTimeoutMs: 3000,
           signal,
         });
       } catch (preflightErr) {

@@ -122,6 +122,12 @@ body.theme-light {
   height: 40px;
   min-width: 40px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 1;
+  padding: 0;
 }
 
 .composer-icon,
@@ -1040,7 +1046,8 @@ body.theme-light .power-trend {
     display: inline-flex;
   }
 
-  .app-shell.wide-drawer-open #menuBtn {
+  .app-shell.wide-drawer-open #menuBtn,
+  .app-shell.wide-drawer-preview #menuBtn {
     display: none;
   }
 
