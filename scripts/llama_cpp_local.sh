@@ -4,7 +4,11 @@ set -euo pipefail
 HOST="${LLAMA_CPP_HOST:-127.0.0.1}"
 CTX_SIZE="${LLAMA_CPP_CTX:-4096}"
 THREADS="${LLAMA_CPP_THREADS:-$(nproc)}"
-RUN_DIR="${LLAMA_CPP_RUN_DIR:-/tmp/openclaw-steve-chat-llama}"
+RUN_TMP_BASE="${TMPDIR:-/data/data/com.termux/files/usr/tmp}"
+if [[ ! -d "$RUN_TMP_BASE" ]]; then
+  mkdir -p "$RUN_TMP_BASE" 2>/dev/null || RUN_TMP_BASE="/tmp"
+fi
+RUN_DIR="${LLAMA_CPP_RUN_DIR:-$RUN_TMP_BASE/openclaw-steve-chat-llama}"
 
 SEARCH_DIRS=(
   "/storage/emulated/0/OpenClawHub/models"

@@ -244,8 +244,30 @@ export class SteveChatApp {
     }
     this.state.promptTemplate.custom = String(this.state.promptTemplate.custom || "");
 
+    this.ensureModelProfilesPresent();
+
     if (!["general", "connectivity", "chat"].includes(this.state.settingsSection)) {
       this.state.settingsSection = "general";
+    }
+  }
+
+  ensureModelProfilesPresent(runtimeModels = []) {
+    const runtime = Array.isArray(runtimeModels) ? runtimeModels : [];
+    const profileModels = Object.values(MODEL_PROFILES).map((p) => ({ id: p.id, name: p.name }));
+    const existing = Array.isArray(this.state.models) ? this.state.models : [];
+
+    const merged = [...runtime, ...existing, ...profileModels];
+    const seen = new Set();
+    this.state.models = merged.filter((m) => {
+      const id = String(m?.id || "").trim();
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    }).map((m) => ({ id: String(m.id), name: String(m.name || this.shortName(m.id)) }));
+
+    if (!this.state.models.some((m) => m.id === this.state.selectedModel)) {
+      this.state.selectedModel = profileModels[0].id;
+      localStorage.setItem("steve.model", this.state.selectedModel);
     }
   }
 
@@ -1235,10 +1257,7 @@ export class SteveChatApp {
       this.state.selectedModel = profile.id;
       localStorage.setItem("steve.model", this.state.selectedModel);
 
-      if (!this.state.models.some((m) => m.id === profile.id)) {
-        this.state.models.unshift({ id: profile.id, name: profile.name });
-      }
-
+      this.ensureModelProfilesPresent([{ id: profile.id, name: profile.name }]);
       this.syncModelLabel();
       this.renderModels();
       this.state.localLlamaConnected = true;
@@ -1352,19 +1371,7 @@ export class SteveChatApp {
         intervalMs: 900,
       });
 
-      const profileModels = Object.values(MODEL_PROFILES).map((p) => ({ id: p.id, name: p.name }));
-      const merged = [...listed, ...profileModels];
-      const seen = new Set();
-      this.state.models = merged.filter((m) => {
-        if (!m?.id || seen.has(m.id)) return false;
-        seen.add(m.id);
-        return true;
-      });
-
-      if (!this.state.models.some((m) => m.id === this.state.selectedModel)) {
-        this.state.selectedModel = listed[0]?.id || profileModels[0].id;
-        localStorage.setItem("steve.model", this.state.selectedModel);
-      }
+      this.ensureModelProfilesPresent(listed);
 
       this.renderModels();
       this.syncModelLabel();
@@ -1714,13 +1721,18 @@ export class SteveChatApp {
         intervalMs: 800,
       });
 
+      this.ensureModelProfilesPresent(readyModels);
       if (!readyModels.some((m) => m.id === this.state.selectedModel)) {
-        this.state.models = readyModels;
-        this.state.selectedModel = readyModels[0]?.id || this.state.selectedModel;
+        const preferred = this.state.modelProfile && MODEL_PROFILES[this.state.modelProfile]
+          ? MODEL_PROFILES[this.state.modelProfile].id
+          : null;
+        this.state.selectedModel = preferred && this.state.models.some((m) => m.id === preferred)
+          ? preferred
+          : (readyModels[0]?.id || this.state.selectedModel);
         localStorage.setItem("steve.model", this.state.selectedModel);
-        this.renderModels();
-        this.syncModelLabel();
       }
+      this.renderModels();
+      this.syncModelLabel();
 
       if (this.state.streamMode) {
         let streamedText = "";
