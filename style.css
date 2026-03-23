@@ -989,20 +989,41 @@ body.theme-light .power-trend {
     background: var(--bg);
   }
 
+  .app-shell.wide-drawer-open {
+    grid-template-columns: minmax(250px, 320px) 1fr;
+  }
+
+  .app-shell.wide-drawer-preview,
   .app-shell.sidebar-collapsed {
     grid-template-columns: 74px 1fr;
+  }
+
+  .app-shell.wide-drawer-closed {
+    grid-template-columns: 0 1fr;
   }
 
   .drawer {
     position: relative;
     inset: auto;
-    transform: none !important;
+    transform: none;
     width: 100%;
     height: var(--app-height);
     border-right: 1px solid #202a4a;
     border-bottom: none;
-    z-index: 10;
+    z-index: 45;
     padding-top: calc(8px + env(safe-area-inset-top));
+  }
+
+  .app-shell.wide-drawer-closed .drawer {
+    width: 0;
+    min-width: 0;
+    padding: 0;
+    border-right: none;
+    overflow: hidden;
+  }
+
+  .app-shell.wide-drawer-closed .drawer * {
+    pointer-events: none;
   }
 
   #closeDrawerBtn {
@@ -1016,6 +1037,10 @@ body.theme-light .power-trend {
   }
 
   #menuBtn {
+    display: inline-flex;
+  }
+
+  .app-shell.wide-drawer-open #menuBtn {
     display: none;
   }
 
@@ -1039,24 +1064,31 @@ body.theme-light .power-trend {
     padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
   }
 
+  .app-shell.wide-drawer-preview .drawer,
   .app-shell.sidebar-collapsed .drawer {
     padding: calc(8px + env(safe-area-inset-top)) 8px 8px;
   }
 
+  .app-shell.wide-drawer-preview .drawer-header h2,
+  .app-shell.wide-drawer-preview .drawer-section,
   .app-shell.sidebar-collapsed .drawer-header h2,
   .app-shell.sidebar-collapsed .drawer-section {
     display: none;
   }
 
+  .app-shell.wide-drawer-preview .drawer-header,
   .app-shell.sidebar-collapsed .drawer-header {
     justify-content: center;
   }
 
+  .app-shell.wide-drawer-preview #settingsBtn,
+  .app-shell.wide-drawer-preview #archivesBtn,
   .app-shell.sidebar-collapsed #settingsBtn,
   .app-shell.sidebar-collapsed #archivesBtn {
     display: none;
   }
 
+  .app-shell.wide-drawer-preview #drawerCompactBtn,
   .app-shell.sidebar-collapsed #drawerCompactBtn {
     width: 48px;
     min-width: 48px;
@@ -1064,6 +1096,7 @@ body.theme-light .power-trend {
     font-size: 34px;
   }
 
+  .app-shell.wide-drawer-preview .sidebar-rail,
   .app-shell.sidebar-collapsed .sidebar-rail {
     display: flex;
     flex-direction: column;
