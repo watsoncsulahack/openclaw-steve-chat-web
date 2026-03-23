@@ -45,7 +45,7 @@
 
       <main class="phone-frame">
         <header class="topbar">
-          <button id="menuBtn" class="icon-btn">☰</button>
+          <button id="menuBtn" class="icon-btn" title="Open settings">▾</button>
 
           <button id="modelPickerBtn" class="model-pill">
             <span id="currentModelLabel">Gemma 3N E4B</span>
@@ -107,17 +107,9 @@
           <h3>Settings</h3>
           <button id="closeSettingsBtn" class="icon-btn">✕</button>
         </div>
-        <div class="settings-body">
-          <div class="settings-nav">
-            <button id="settingsNavBtn" class="secondary mini" aria-expanded="false">☰ Sections</button>
-            <div id="settingsNavMenu" class="settings-nav-menu">
-              <button id="settingsSectionGeneralBtn" class="secondary mini settings-section-btn active" data-section="general">General</button>
-              <button id="settingsSectionConnectivityBtn" class="secondary mini settings-section-btn" data-section="connectivity">Connectivity</button>
-              <button id="settingsSectionChatBtn" class="secondary mini settings-section-btn" data-section="chat">Chat defaults</button>
-            </div>
-          </div>
-
-          <section id="settingsSectionGeneral" class="settings-section active" data-section="general">
+        <div class="settings-body simple-list">
+          <section id="settingsSectionGeneral" class="settings-section active" data-section="all">
+            <h4 class="settings-subhead">Mode</h4>
             <div class="mode-row">
               <button id="mockModeBtn" class="secondary mode-btn active">UI Demo</button>
               <button id="runtimeModeBtn" class="secondary mode-btn">Local Runtime</button>
@@ -130,37 +122,36 @@
               <button id="settingsToggleThemeBtn" class="secondary">Toggle theme</button>
             </div>
             <p id="modeHint" class="hint">UI Demo mode uses mock Steve replies for flow testing.</p>
-          </section>
 
-          <section id="settingsSectionConnectivity" class="settings-section" data-section="connectivity">
+            <h4 class="settings-subhead">Connectivity</h4>
             <label class="field-label" for="baseUrlInput">Model endpoint</label>
-            <input id="baseUrlInput" type="text" value="http://127.0.0.1:18080" />
+            <input id="baseUrlInput" type="text" value="http://127.0.0.1:18084" />
             <div class="drawer-row">
               <button id="saveBaseUrlBtn" class="secondary">Save</button>
               <button id="detectModelsBtn" class="secondary">Detect</button>
             </div>
             <div class="drawer-row">
-              <button id="connectLocalLlamaBtn" class="secondary" title="Set endpoint to selected local llama backend and detect models">Connect local llama.cpp</button>
+              <button id="connectLocalLlamaBtn" class="secondary" title="Set endpoint to selected backend and detect models">Connect local runtime</button>
             </div>
-            <div class="mode-row backend-row">
-              <button id="backendRegularBtn" class="secondary mode-btn active">Regular llama.cpp</button>
-              <button id="backendQvacBtn" class="secondary mode-btn">QVAC fabric llama.cpp</button>
-            </div>
-            <label class="field-label">Regular runtime target</label>
-            <div class="mode-row backend-row runtime-target-row">
-              <button id="runtimePrebuiltBtn" class="secondary mode-btn active">Prebuilt</button>
-              <button id="runtimeCpuBtn" class="secondary mode-btn">CPU build</button>
-              <button id="runtimeVulkanBtn" class="secondary mode-btn">Vulkan build (GPU)</button>
-            </div>
-            <label class="field-label">QVAC runtime target</label>
-            <div class="mode-row backend-row qvac-target-row">
-              <button id="qvacCpuBtn" class="secondary mode-btn active">QVAC CPU</button>
-              <button id="qvacVulkanBtn" class="secondary mode-btn">QVAC Vulkan (GPU)</button>
-            </div>
-            <p id="runtimeStatus" class="hint">Runtime: idle.</p>
-          </section>
 
-          <section id="settingsSectionChat" class="settings-section" data-section="chat">
+            <label class="field-label" for="backendSelect">Backend</label>
+            <select id="backendSelect">
+              <option value="qvac">QVAC fabric llama.cpp</option>
+              <option value="regular">Regular llama.cpp</option>
+            </select>
+
+            <label class="field-label" for="modelProfileSelect">Local model profile</label>
+            <div class="drawer-row">
+              <select id="modelProfileSelect">
+                <option value="e4b">Gemma 3n E4B (4B profile)</option>
+                <option value="e2b">Gemma 3n E2B</option>
+              </select>
+              <button id="applyModelProfileBtn" class="secondary">Apply model</button>
+            </div>
+
+            <p id="runtimeStatus" class="hint">Runtime: idle.</p>
+
+            <h4 class="settings-subhead">Chat defaults</h4>
             <label class="field-label" for="chatTemplateSelect">Reply style template</label>
             <select id="chatTemplateSelect">
               <option value="none">None</option>
@@ -169,6 +160,7 @@
               <option value="coder">Coding copilot</option>
               <option value="custom">Custom template</option>
             </select>
+            <p id="templateDescription" class="hint">No template: sends your prompt unchanged.</p>
 
             <label class="field-label" for="customTemplateInput">Custom template text</label>
             <textarea id="customTemplateInput" rows="4" placeholder="Optional instruction prefix used for live runtime prompts."></textarea>
@@ -216,8 +208,6 @@
               <button id="saveChatDefaultsBtn" class="secondary">Save chat defaults</button>
             </div>
           </section>
-
-          <!-- Power telemetry panel temporarily hidden for design iteration. -->
         </div>
       </div>
     </section>

@@ -831,6 +831,18 @@ body.theme-light .swipe-cue-right {
   overscroll-behavior: contain;
 }
 
+.settings-body.simple-list {
+  gap: 10px;
+}
+
+.settings-subhead {
+  margin: 6px 0 2px;
+  font-size: 0.86rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 .settings-nav {
   position: sticky;
   top: 0;

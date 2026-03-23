@@ -9,7 +9,7 @@ Mobile-first local chat UI prototype inspired by Allan's sketch (hamburger menu,
 - Step 3: tap-through chat flow ✅
   - chat drawer + searchable chat history
   - model picker sheet
-  - settings sheet (endpoint + backend + regular/qvac runtime targets + runtime mode)
+  - simplified settings sheet (single list with backend dropdown, model profile dropdown, chat defaults)
   - message composer + mock Steve replies + mock mic button
   - assistant metadata includes live `tokens/s` + power telemetry
   - bottom session token counters (total / prompt / completion)
@@ -32,11 +32,10 @@ Open:
 From the **Settings** button (⚙):
 
 1. Set base URL (default `http://127.0.0.1:18084`)
-2. Pick backend (**Regular** or **QVAC**) and runtime target:
-   - Regular: **Prebuilt / CPU build / Vulkan build (GPU)**
-   - QVAC: **QVAC CPU / QVAC Vulkan (GPU)**
-3. Tap **Detect** to load local models
-4. Tune chat sampling/perf settings in **Chat defaults**:
+2. Pick backend from dropdown (**Regular** or **QVAC fabric**)
+3. Pick local model profile (**E2B** or **E4B/4B**) and tap **Apply model**
+4. Tap **Detect** to load local models
+5. Tune chat sampling/perf settings in **Chat defaults**:
    - temperature, top-k, top-p, min-p, typical-p, repeat penalty, max tokens
    - optional custom JSON (advanced) merged into `/v1/chat/completions`
 5. Choose mode:
@@ -95,7 +94,7 @@ Recommended for phone testing: run **one target at a time** (stops others first)
 
 Then in Steve Chat Settings:
 1. choose backend (Regular or QVAC)
-2. choose runtime target (Regular or QVAC section)
+2. choose model profile (E2B or E4B) and tap **Apply model**
 3. tap **Connect local …** to set endpoint + detect models.
 
 Build helper for upstream llama.cpp arm64 CPU/Vulkan artifacts: `scripts/phase2b_build_llama_org_arm64.sh`

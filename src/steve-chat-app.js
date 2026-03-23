@@ -7,33 +7,31 @@ import { StorageService } from "./services/storage-service.js";
 const WIDE_QUERY = "(min-width: 700px)";
 const ARCHIVE_ICON_SVG = '<svg class="archive-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16"/><rect x="5" y="6" width="14" height="13" rx="2"/><path d="M9 11h6"/><path d="M9 14h6"/></svg>';
 const REGULAR_RUNTIME_TARGETS = {
-  prebuilt: {
-    label: "Prebuilt llama.cpp",
+  default: {
+    label: "Regular llama.cpp",
     endpoint: "http://127.0.0.1:18080",
-    accel: "gpu-capable",
-  },
-  cpu: {
-    label: "Llama.cpp CPU build",
-    endpoint: "http://127.0.0.1:18082",
-    accel: "cpu-only",
-  },
-  vulkan: {
-    label: "Llama.cpp Vulkan build",
-    endpoint: "http://127.0.0.1:18083",
     accel: "gpu-capable",
   },
 };
 
 const QVAC_RUNTIME_TARGETS = {
-  cpu: {
-    label: "QVAC CPU build",
-    endpoint: "http://127.0.0.1:18081",
-    accel: "cpu-only",
-  },
-  vulkan: {
-    label: "QVAC Vulkan build",
+  default: {
+    label: "QVAC fabric llama.cpp",
     endpoint: "http://127.0.0.1:18084",
     accel: "gpu-capable",
+  },
+};
+
+const MODEL_PROFILES = {
+  e2b: {
+    id: "gemma-3n-E2B-it-UD-Q4_K_XL.gguf",
+    name: "Gemma 3n E2B",
+    modelIndex: 1,
+  },
+  e4b: {
+    id: "gemma-3n-E4B-it-UD-Q4_K_XL.gguf",
+    name: "Gemma 3n E4B (4B profile)",
+    modelIndex: 2,
   },
 };
 
@@ -63,19 +61,14 @@ export class SteveChatApp {
     if (savedProfileVersion !== GPU_PROFILE_VERSION) {
       // One-time migration: default Steve Chat to a known GPU-backed runtime profile.
       localStorage.setItem("steve.backend", "qvac");
-      localStorage.setItem("steve.runtimeTarget", "vulkan");
-      localStorage.setItem("steve.qvacRuntimeTarget", "vulkan");
-      localStorage.setItem("steve.baseUrl", QVAC_RUNTIME_TARGETS.vulkan.endpoint);
+      localStorage.setItem("steve.baseUrl", QVAC_RUNTIME_TARGETS.default.endpoint);
       localStorage.setItem("steve.liveMode", "1");
       localStorage.setItem("steve.gpuProfileVersion", GPU_PROFILE_VERSION);
     }
 
     const backend = localStorage.getItem("steve.backend") || "qvac";
-    const runtimeTarget = localStorage.getItem("steve.runtimeTarget") || "vulkan";
-    const qvacRuntimeTarget = localStorage.getItem("steve.qvacRuntimeTarget") || "vulkan";
-
-    const selectedRuntime = REGULAR_RUNTIME_TARGETS[runtimeTarget] || REGULAR_RUNTIME_TARGETS.vulkan;
-    const selectedQvacRuntime = QVAC_RUNTIME_TARGETS[qvacRuntimeTarget] || QVAC_RUNTIME_TARGETS.vulkan;
+    const selectedRuntime = REGULAR_RUNTIME_TARGETS.default;
+    const selectedQvacRuntime = QVAC_RUNTIME_TARGETS.default;
     const defaultBaseUrl = backend === "qvac"
       ? selectedQvacRuntime.endpoint
       : selectedRuntime.endpoint;
@@ -94,8 +87,8 @@ export class SteveChatApp {
 
     return {
       backend,
-      runtimeTarget: REGULAR_RUNTIME_TARGETS[runtimeTarget] ? runtimeTarget : "vulkan",
-      qvacRuntimeTarget: QVAC_RUNTIME_TARGETS[qvacRuntimeTarget] ? qvacRuntimeTarget : "vulkan",
+      runtimeTarget: "default",
+      qvacRuntimeTarget: "default",
       baseUrl,
       liveMode: (localStorage.getItem("steve.liveMode") ?? "1") === "1",
       sidebarCollapsed: localStorage.getItem("steve.sidebarCollapsed") === "1",
@@ -104,7 +97,8 @@ export class SteveChatApp {
       replyTarget: null,
       mockMicOn: false,
       activeChatId: "steve",
-      selectedModel: localStorage.getItem("steve.model") || "gemma-3n-e4b",
+      selectedModel: localStorage.getItem("steve.model") || MODEL_PROFILES.e4b.id,
+      modelProfile: localStorage.getItem("steve.modelProfile") || "e4b",
       chatFilter: "",
       streamMode: localStorage.getItem("steve.streamMode") !== "0",
       ttsEnabled: localStorage.getItem("steve.ttsEnabled") === "1",
@@ -137,8 +131,8 @@ export class SteveChatApp {
         total: 0,
       },
       models: [
-        { id: "gemma-3n-e4b", name: "Gemma 3N E4B" },
-        { id: "gemma-3n-e2b", name: "Gemma 3N E2B" },
+        { id: MODEL_PROFILES.e4b.id, name: MODEL_PROFILES.e4b.name },
+        { id: MODEL_PROFILES.e2b.id, name: MODEL_PROFILES.e2b.name },
       ],
       chats: [
         { id: "steve", title: "Steve", subtitle: "Main thread", archived: false },
@@ -166,13 +160,8 @@ export class SteveChatApp {
       this.state.backend = "regular";
     }
 
-    if (!REGULAR_RUNTIME_TARGETS[this.state.runtimeTarget]) {
-      this.state.runtimeTarget = "vulkan";
-    }
-
-    if (!QVAC_RUNTIME_TARGETS[this.state.qvacRuntimeTarget]) {
-      this.state.qvacRuntimeTarget = "vulkan";
-    }
+    this.state.runtimeTarget = "default";
+    this.state.qvacRuntimeTarget = "default";
 
     this.els.baseUrlInput.value = this.state.baseUrl;
     this.els.streamModeToggle.checked = Boolean(this.state.streamMode);
@@ -180,6 +169,8 @@ export class SteveChatApp {
     if (this.els.chatTemplateSelect) this.els.chatTemplateSelect.value = this.state.promptTemplate.key;
     if (this.els.customTemplateInput) this.els.customTemplateInput.value = this.state.promptTemplate.custom;
     if (this.els.maxTokensInput) this.els.maxTokensInput.value = String(this.state.generation.maxTokens);
+    if (this.els.backendSelect) this.els.backendSelect.value = this.state.backend;
+    if (this.els.modelProfileSelect) this.els.modelProfileSelect.value = this.state.modelProfile || "e4b";
     if (this.els.temperatureInput) this.els.temperatureInput.value = String(this.state.generation.temperature);
     if (this.els.topPInput) this.els.topPInput.value = String(this.state.generation.topP);
     if (this.els.topKInput) this.els.topKInput.value = String(this.state.generation.topK);
@@ -243,6 +234,11 @@ export class SteveChatApp {
     if (!this.state.promptTemplate || typeof this.state.promptTemplate !== "object") {
       this.state.promptTemplate = { key: "none", custom: "" };
     }
+    if (!Object.prototype.hasOwnProperty.call(MODEL_PROFILES, this.state.modelProfile || "")) {
+      this.state.modelProfile = "e4b";
+    }
+    const prof = MODEL_PROFILES[this.state.modelProfile] || MODEL_PROFILES.e4b;
+    if (!this.state.selectedModel) this.state.selectedModel = prof.id;
     if (!CHAT_TEMPLATE_PRESETS[this.state.promptTemplate.key] && this.state.promptTemplate.key !== "custom") {
       this.state.promptTemplate.key = "none";
     }
@@ -254,11 +250,11 @@ export class SteveChatApp {
   }
 
   getRuntimeTarget() {
-    return REGULAR_RUNTIME_TARGETS[this.state.runtimeTarget] || REGULAR_RUNTIME_TARGETS.vulkan;
+    return REGULAR_RUNTIME_TARGETS.default;
   }
 
   getQvacRuntimeTarget() {
-    return QVAC_RUNTIME_TARGETS[this.state.qvacRuntimeTarget] || QVAC_RUNTIME_TARGETS.vulkan;
+    return QVAC_RUNTIME_TARGETS.default;
   }
 
   getBackendEndpoint() {
@@ -312,10 +308,9 @@ export class SteveChatApp {
     this.schedulePersist();
   }
 
-  setRuntimeTarget(target) {
-    if (!REGULAR_RUNTIME_TARGETS[target]) return;
-    this.state.runtimeTarget = target;
-    localStorage.setItem("steve.runtimeTarget", target);
+  setRuntimeTarget() {
+    this.state.runtimeTarget = "default";
+    localStorage.setItem("steve.runtimeTarget", "default");
 
     if (this.state.backend === "regular") {
       this.state.baseUrl = this.getBackendEndpoint();
@@ -331,10 +326,9 @@ export class SteveChatApp {
     this.schedulePersist();
   }
 
-  setQvacRuntimeTarget(target) {
-    if (!QVAC_RUNTIME_TARGETS[target]) return;
-    this.state.qvacRuntimeTarget = target;
-    localStorage.setItem("steve.qvacRuntimeTarget", target);
+  setQvacRuntimeTarget() {
+    this.state.qvacRuntimeTarget = "default";
+    localStorage.setItem("steve.qvacRuntimeTarget", "default");
 
     if (this.state.backend === "qvac") {
       this.state.baseUrl = this.getBackendEndpoint();
@@ -364,7 +358,7 @@ export class SteveChatApp {
   }
 
   bindEvents() {
-    this.els.menuBtn.addEventListener("click", () => this.toggleDrawer(true));
+    this.els.menuBtn.addEventListener("click", () => this.toggleSettingsSheet(true));
     this.els.closeDrawerBtn.addEventListener("click", () => this.toggleDrawer(false));
     this.els.backdrop.addEventListener("click", () => {
       this.toggleDrawer(false);
@@ -376,10 +370,6 @@ export class SteveChatApp {
     this.els.closeModelSheetBtn.addEventListener("click", () => this.toggleModelSheet(false));
     this.els.settingsBtn.addEventListener("click", () => this.toggleSettingsSheet(true));
     this.els.closeSettingsBtn.addEventListener("click", () => this.toggleSettingsSheet(false));
-    this.els.settingsNavBtn?.addEventListener("click", () => this.toggleSettingsNavMenu());
-    this.els.settingsSectionGeneralBtn?.addEventListener("click", () => this.setSettingsSection("general"));
-    this.els.settingsSectionConnectivityBtn?.addEventListener("click", () => this.setSettingsSection("connectivity"));
-    this.els.settingsSectionChatBtn?.addEventListener("click", () => this.setSettingsSection("chat"));
 
     this.els.saveBaseUrlBtn.addEventListener("click", () => this.saveBaseUrl());
     this.els.detectModelsBtn.addEventListener("click", () => this.detectModels());
@@ -400,14 +390,8 @@ export class SteveChatApp {
     this.els.themeToggleBtn.addEventListener("click", () => this.toggleTheme());
     this.els.resetPowerStatsBtn?.addEventListener("click", () => this.resetPowerStats());
 
-    this.els.backendRegularBtn.addEventListener("click", () => this.setBackend("regular"));
-    this.els.backendQvacBtn.addEventListener("click", () => this.setBackend("qvac"));
-
-    this.els.runtimePrebuiltBtn?.addEventListener("click", () => this.setRuntimeTarget("prebuilt"));
-    this.els.runtimeCpuBtn?.addEventListener("click", () => this.setRuntimeTarget("cpu"));
-    this.els.runtimeVulkanBtn?.addEventListener("click", () => this.setRuntimeTarget("vulkan"));
-    this.els.qvacCpuBtn?.addEventListener("click", () => this.setQvacRuntimeTarget("cpu"));
-    this.els.qvacVulkanBtn?.addEventListener("click", () => this.setQvacRuntimeTarget("vulkan"));
+    this.els.backendSelect?.addEventListener("change", (e) => this.setBackend(String(e.target?.value || "qvac")));
+    this.els.applyModelProfileBtn?.addEventListener("click", () => this.applyModelProfile());
 
     this.els.mockModeBtn.addEventListener("click", () => this.setMode(false));
     this.els.runtimeModeBtn.addEventListener("click", () => this.setMode(true));
@@ -442,7 +426,7 @@ export class SteveChatApp {
       window.setTimeout(() => this.ensureComposerVisible(), 120);
     });
 
-    this.bindDrawerDragGesture();
+    // Drawer gesture disabled for simplified settings-first mobile UX.
   }
 
   bindDrawerDragGesture() {
@@ -677,7 +661,6 @@ export class SteveChatApp {
     if (open) this.els.modelSheet.classList.remove("show");
     this.els.settingsSheet.classList.toggle("show", open);
     if (open) this.renderSettingsSections();
-    else this.closeSettingsNavMenu();
     this.syncBackdrop();
   }
 
@@ -706,16 +689,7 @@ export class SteveChatApp {
   }
 
   renderSettingsSections() {
-    const section = this.state.settingsSection || "general";
-
-    this.els.settingsSectionGeneral?.classList.toggle("active", section === "general");
-    this.els.settingsSectionConnectivity?.classList.toggle("active", section === "connectivity");
-    this.els.settingsSectionChat?.classList.toggle("active", section === "chat");
-
-    this.els.settingsSectionGeneralBtn?.classList.toggle("active", section === "general");
-    this.els.settingsSectionConnectivityBtn?.classList.toggle("active", section === "connectivity");
-    this.els.settingsSectionChatBtn?.classList.toggle("active", section === "chat");
-
+    this.els.settingsSectionGeneral?.classList.add("active");
     this.renderChatDefaultsUi();
   }
 
@@ -727,6 +701,17 @@ export class SteveChatApp {
     this.els.customTemplateInput.placeholder = custom
       ? "Custom instruction prefix for live runtime prompts"
       : "Select 'Custom template' to edit this field.";
+
+    const templateDescriptions = {
+      none: "No template: sends your prompt unchanged.",
+      assistant: "Helpful assistant: practical, friendly, and accurate responses.",
+      concise: "Concise + direct: shorter replies with clear next steps.",
+      coder: "Coding copilot: explains tradeoffs and includes runnable examples.",
+      custom: "Custom template: your instruction text is prepended to each user prompt.",
+    };
+    if (this.els.templateDescription) {
+      this.els.templateDescription.textContent = templateDescriptions[key] || templateDescriptions.none;
+    }
   }
 
   syncBackdrop() {
@@ -1078,12 +1063,17 @@ export class SteveChatApp {
       const btn = document.createElement("button");
       btn.className = `model-item ${model.id === this.state.selectedModel ? "active" : ""}`;
       btn.textContent = model.name;
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", async () => {
         this.state.selectedModel = model.id;
         localStorage.setItem("steve.model", model.id);
         this.syncModelLabel();
         this.renderModels();
         this.toggleModelSheet(false);
+
+        const profileKey = this.profileKeyForModelId(model.id);
+        if (profileKey) {
+          await this.applyModelProfile(profileKey);
+        }
       });
       this.els.modelList.appendChild(btn);
     });
@@ -1102,27 +1092,12 @@ export class SteveChatApp {
   }
 
   renderBackendUi() {
-    this.els.backendRegularBtn.classList.toggle("active", this.state.backend === "regular");
-    this.els.backendQvacBtn.classList.toggle("active", this.state.backend === "qvac");
+    if (this.els.backendSelect) this.els.backendSelect.value = this.state.backend;
   }
 
   renderRuntimeTargetUi() {
-    const regular = this.state.backend === "regular";
-    const qvac = this.state.backend === "qvac";
-
-    this.els.runtimePrebuiltBtn?.classList.toggle("active", regular && this.state.runtimeTarget === "prebuilt");
-    this.els.runtimeCpuBtn?.classList.toggle("active", regular && this.state.runtimeTarget === "cpu");
-    this.els.runtimeVulkanBtn?.classList.toggle("active", regular && this.state.runtimeTarget === "vulkan");
-
-    this.els.runtimePrebuiltBtn && (this.els.runtimePrebuiltBtn.disabled = !regular);
-    this.els.runtimeCpuBtn && (this.els.runtimeCpuBtn.disabled = !regular);
-    this.els.runtimeVulkanBtn && (this.els.runtimeVulkanBtn.disabled = !regular);
-
-    this.els.qvacCpuBtn?.classList.toggle("active", qvac && this.state.qvacRuntimeTarget === "cpu");
-    this.els.qvacVulkanBtn?.classList.toggle("active", qvac && this.state.qvacRuntimeTarget === "vulkan");
-
-    this.els.qvacCpuBtn && (this.els.qvacCpuBtn.disabled = !qvac);
-    this.els.qvacVulkanBtn && (this.els.qvacVulkanBtn.disabled = !qvac);
+    if (this.els.backendSelect) this.els.backendSelect.value = this.state.backend;
+    if (this.els.modelProfileSelect) this.els.modelProfileSelect.value = this.state.modelProfile || "e4b";
   }
 
   renderModeUi() {
@@ -1227,6 +1202,56 @@ export class SteveChatApp {
     await this.detectModels();
   }
 
+  profileKeyForModelId(modelId) {
+    const id = String(modelId || "");
+    for (const [key, profile] of Object.entries(MODEL_PROFILES)) {
+      if (profile.id === id) return key;
+    }
+    return null;
+  }
+
+  async applyModelProfile(profileKeyInput = null) {
+    const profileKey = profileKeyInput || this.els.modelProfileSelect?.value || "e4b";
+    const profile = MODEL_PROFILES[profileKey] || MODEL_PROFILES.e4b;
+    this.state.modelProfile = profileKey;
+    if (this.els.modelProfileSelect) this.els.modelProfileSelect.value = profileKey;
+    localStorage.setItem("steve.modelProfile", profileKey);
+
+    const target = this.state.backend === "qvac" ? "qvac-vulkan" : "reg-prebuilt";
+    this.setRuntimeState("working", `Applying ${profile.name} on ${this.getBackendLabel()}...`);
+
+    try {
+      const switched = await this.runtimeClient.switchLocalRuntime({
+        target,
+        modelIndex: profile.modelIndex,
+        siteId: "steve-chat",
+      });
+
+      const endpoint = switched?.endpoint || this.getBackendEndpoint();
+      this.state.baseUrl = endpoint;
+      this.els.baseUrlInput.value = endpoint;
+      localStorage.setItem("steve.baseUrl", endpoint);
+
+      this.state.selectedModel = profile.id;
+      localStorage.setItem("steve.model", this.state.selectedModel);
+
+      if (!this.state.models.some((m) => m.id === profile.id)) {
+        this.state.models.unshift({ id: profile.id, name: profile.name });
+      }
+
+      this.syncModelLabel();
+      this.renderModels();
+      this.state.localLlamaConnected = true;
+      this.renderLocalLlamaButton();
+
+      await this.detectModels();
+      this.setRuntimeState("ok", `Applied ${profile.name} on ${this.getBackendLabel()}.`);
+      this.schedulePersist();
+    } catch (err) {
+      this.setRuntimeState("error", `Model switch failed: ${String(err?.message || err)}`);
+    }
+  }
+
   saveBaseUrl() {
     this.state.baseUrl = (this.els.baseUrlInput.value || "").trim().replace(/\/$/, "");
     localStorage.setItem("steve.baseUrl", this.state.baseUrl);
@@ -1327,9 +1352,17 @@ export class SteveChatApp {
         intervalMs: 900,
       });
 
-      this.state.models = listed;
+      const profileModels = Object.values(MODEL_PROFILES).map((p) => ({ id: p.id, name: p.name }));
+      const merged = [...listed, ...profileModels];
+      const seen = new Set();
+      this.state.models = merged.filter((m) => {
+        if (!m?.id || seen.has(m.id)) return false;
+        seen.add(m.id);
+        return true;
+      });
+
       if (!this.state.models.some((m) => m.id === this.state.selectedModel)) {
-        this.state.selectedModel = this.state.models[0].id;
+        this.state.selectedModel = listed[0]?.id || profileModels[0].id;
         localStorage.setItem("steve.model", this.state.selectedModel);
       }
 

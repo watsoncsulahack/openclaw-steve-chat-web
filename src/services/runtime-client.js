@@ -22,9 +22,27 @@ export class RuntimeClient {
     if (!res.ok) throw await this.httpError(res);
 
     const data = await res.json();
-    return (data?.data || [])
-      .map((m) => ({ id: String(m.id), name: this.shortName(String(m.id)) }))
-      .filter((m) => m.id);
+    const openaiList = Array.isArray(data?.data) ? data.data : [];
+    const legacyList = Array.isArray(data?.models) ? data.models : [];
+
+    const mapped = [
+      ...openaiList.map((m) => ({ id: String(m?.id || ""), name: this.shortName(String(m?.id || "")) })),
+      ...legacyList.map((m) => {
+        const id = String(m?.model || m?.name || "");
+        return { id, name: this.shortName(id) };
+      }),
+    ];
+
+    const dedup = [];
+    const seen = new Set();
+    for (const item of mapped) {
+      if (!item?.id) continue;
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      dedup.push(item);
+    }
+
+    return dedup;
   }
 
   async fetchModelsWithRetry(baseUrl, { timeoutMs = 45000, intervalMs = 900 } = {}) {
@@ -246,6 +264,28 @@ export class RuntimeClient {
     details = String(details || "").replace(/\s+/g, " ").trim();
     const clipped = details ? `: ${details.slice(0, 180)}` : "";
     return new Error(`HTTP ${res.status}${clipped}`);
+  }
+
+  async switchLocalRuntime({ target, modelIndex = 1, siteId = "steve-chat" }) {
+    const res = await fetch("http://127.0.0.1:8099/v0/llama_runtime_switch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: siteId, target, modelIndex }),
+    });
+
+    let payload = null;
+    try {
+      payload = await res.json();
+    } catch {
+      payload = null;
+    }
+
+    if (!res.ok || !payload?.ok) {
+      const msg = payload?.error?.message || `Runtime switch failed (HTTP ${res.status})`;
+      throw new Error(msg);
+    }
+
+    return payload.data || null;
   }
 
   shortName(full) {
