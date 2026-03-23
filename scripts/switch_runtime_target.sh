@@ -39,12 +39,12 @@ fi
 
 stop_all() {
   # regular ports
-  env LLAMA_CPP_PORT=18080 "$LAUNCHER" stop --backend regular || true
-  env LLAMA_CPP_PORT=18082 "$LAUNCHER" stop --backend regular || true
-  env LLAMA_CPP_PORT=18083 "$LAUNCHER" stop --backend regular || true
+  env LLAMA_CPP_PORT=18080 bash "$LAUNCHER" stop --backend regular || true
+  env LLAMA_CPP_PORT=18082 bash "$LAUNCHER" stop --backend regular || true
+  env LLAMA_CPP_PORT=18083 bash "$LAUNCHER" stop --backend regular || true
   # qvac ports
-  env QVAC_LLAMA_PORT=18081 "$LAUNCHER" stop --backend qvac || true
-  env QVAC_LLAMA_PORT=18084 "$LAUNCHER" stop --backend qvac || true
+  env QVAC_LLAMA_PORT=18081 bash "$LAUNCHER" stop --backend qvac || true
+  env QVAC_LLAMA_PORT=18084 bash "$LAUNCHER" stop --backend qvac || true
 }
 
 need_bin() {
@@ -59,29 +59,29 @@ case "$TARGET" in
   reg-prebuilt)
     need_bin "regular prebuilt" "$REG_PREBUILT_BIN"
     env LLAMA_CPP_BIN="$REG_PREBUILT_BIN" LLAMA_CPP_PORT=18080 \
-      "$LAUNCHER" start --backend regular --mode gpu --index "$MODEL_INDEX"
+      bash "$LAUNCHER" start --backend regular --mode gpu --index "$MODEL_INDEX"
     ;;
   reg-cpu)
     need_bin "regular cpu" "$REG_CPU_BIN"
     env LLAMA_CPP_BIN="$REG_CPU_BIN" LLAMA_CPP_PORT=18082 \
-      "$LAUNCHER" start --backend regular --mode cpu --index "$MODEL_INDEX"
+      bash "$LAUNCHER" start --backend regular --mode cpu --index "$MODEL_INDEX"
     ;;
   reg-vulkan)
     need_bin "regular vulkan" "$REG_VK_BIN"
     env LLAMA_CPP_BIN="$REG_VK_BIN" LLAMA_CPP_PORT=18083 \
-      "$LAUNCHER" start --backend regular --mode gpu --index "$MODEL_INDEX"
+      bash "$LAUNCHER" start --backend regular --mode gpu --index "$MODEL_INDEX"
     ;;
   qvac-cpu)
     need_bin "qvac cpu" "$QVAC_CPU_BIN"
     env QVAC_LLAMA_BIN="$QVAC_CPU_BIN" QVAC_LLAMA_PORT=18081 \
       QVAC_N_GPU_LAYERS="${QVAC_N_GPU_LAYERS:-0}" LLAMA_CPP_CTX="${LLAMA_CPP_CTX:-2048}" LLAMA_CPP_THREADS="${LLAMA_CPP_THREADS:-3}" \
-      "$LAUNCHER" start --backend qvac --mode cpu --index "$MODEL_INDEX"
+      bash "$LAUNCHER" start --backend qvac --mode cpu --index "$MODEL_INDEX"
     ;;
   qvac-vulkan)
     need_bin "qvac vulkan" "$QVAC_VK_BIN"
     env QVAC_LLAMA_BIN="$QVAC_VK_BIN" QVAC_LLAMA_PORT=18084 \
       QVAC_N_GPU_LAYERS="${QVAC_N_GPU_LAYERS:-72}" LLAMA_CPP_CTX="${LLAMA_CPP_CTX:-2048}" LLAMA_CPP_THREADS="${LLAMA_CPP_THREADS:-3}" \
-      "$LAUNCHER" start --backend qvac --mode gpu --index "$MODEL_INDEX"
+      bash "$LAUNCHER" start --backend qvac --mode gpu --index "$MODEL_INDEX"
     ;;
   *)
     usage
