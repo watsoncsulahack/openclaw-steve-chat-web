@@ -342,7 +342,27 @@ export class RuntimeClient {
       });
     } catch (err) {
       if (err?.name === "AbortError") {
-        throw new Error(`Runtime switch timed out after ${timeout}ms`);
+        // Fallback: the supervisor request may time out while the runtime actually
+        // continues starting in background. Probe expected endpoint before failing.
+        const guessedPort = String(target || "").startsWith("reg") ? 18080 : 18084;
+        const guessedEndpoint = `http://127.0.0.1:${guessedPort}`;
+        try {
+          await this.fetchModelsWithRetry(guessedEndpoint, {
+            timeoutMs: 12000,
+            intervalMs: 700,
+            requestTimeoutMs: 2500,
+          });
+          return {
+            siteId,
+            target,
+            modelIndex,
+            endpoint: guessedEndpoint,
+            port: guessedPort,
+            recoveredAfterTimeout: true,
+          };
+        } catch {
+          throw new Error(`Runtime switch timed out after ${timeout}ms`);
+        }
       }
       throw err;
     } finally {
