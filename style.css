@@ -614,8 +614,12 @@ textarea {
   margin-top: 8px;
 }
 
+.backend-connect-row {
+  align-items: center;
+}
+
 #connectLocalLlamaBtn {
-  grid-column: 1 / -1;
+  min-width: 108px;
 }
 
 .backend-row .mode-btn {

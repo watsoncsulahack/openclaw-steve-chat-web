@@ -327,12 +327,27 @@ export class RuntimeClient {
     return new Error(`HTTP ${res.status}${clipped}`);
   }
 
-  async switchLocalRuntime({ target, modelIndex = 1, siteId = "steve-chat" }) {
-    const res = await fetch("http://127.0.0.1:8099/v0/llama_runtime_switch", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: siteId, target, modelIndex }),
-    });
+  async switchLocalRuntime({ target, modelIndex = 1, siteId = "steve-chat", timeoutMs = 45000 }) {
+    const controller = new AbortController();
+    const timeout = Math.max(5000, Number(timeoutMs) || 45000);
+    const timer = setTimeout(() => controller.abort(), timeout);
+
+    let res;
+    try {
+      res = await fetch("http://127.0.0.1:8099/v0/llama_runtime_switch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: siteId, target, modelIndex }),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      if (err?.name === "AbortError") {
+        throw new Error(`Runtime switch timed out after ${timeout}ms`);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
 
     let payload = null;
     try {

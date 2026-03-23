@@ -78,6 +78,7 @@ export function getDomRefs() {
     sessionTokenTotal: $("sessionTokenTotal"),
     sessionPromptTokens: $("sessionPromptTokens"),
     sessionCompletionTokens: $("sessionCompletionTokens"),
+    sessionBackendLabel: $("sessionBackendLabel"),
 
     menuBtn: $("menuBtn"),
     closeDrawerBtn: $("closeDrawerBtn"),

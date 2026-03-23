@@ -86,7 +86,7 @@
 
         <div id="sessionTokenBar" class="session-token-bar" aria-live="polite">
           <span>Total tokens: <b id="sessionTokenTotal">0</b></span>
-          <span class="sub">Prompt <b id="sessionPromptTokens">0</b> • Completion <b id="sessionCompletionTokens">0</b></span>
+          <span class="sub"><span id="sessionBackendLabel">Backend: QVAC</span> • Prompt <b id="sessionPromptTokens">0</b> • Completion <b id="sessionCompletionTokens">0</b></span>
         </div>
       </main>
     </div>
@@ -130,15 +130,14 @@
               <button id="saveBaseUrlBtn" class="secondary">Save</button>
               <button id="detectModelsBtn" class="secondary">Detect</button>
             </div>
-            <div class="drawer-row">
-              <button id="connectLocalLlamaBtn" class="secondary" title="Set endpoint to selected backend and detect models">Connect local runtime</button>
-            </div>
-
             <label class="field-label" for="backendSelect">Backend</label>
-            <select id="backendSelect">
-              <option value="qvac">QVAC fabric llama.cpp</option>
-              <option value="regular">Regular llama.cpp</option>
-            </select>
+            <div class="drawer-row backend-connect-row">
+              <select id="backendSelect">
+                <option value="qvac">QVAC fabric llama.cpp</option>
+                <option value="regular">Regular llama.cpp</option>
+              </select>
+              <button id="connectLocalLlamaBtn" class="secondary" title="Set endpoint to selected backend and detect models">Connect</button>
+            </div>
 
             <label class="field-label" for="modelProfileSelect">Local model profile</label>
             <div class="drawer-row">

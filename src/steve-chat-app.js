@@ -615,7 +615,11 @@ export class SteveChatApp {
       if (gesture === "open") {
         this.toggleDrawer(true);
       } else if (gesture === "close") {
-        this.toggleDrawer(false);
+        if (this.isWide() && this.getWideDrawerMode() === "open") {
+          this.setWideDrawerMode("preview");
+        } else {
+          this.toggleDrawer(false);
+        }
       }
 
       gestureCommitted = true;
@@ -899,9 +903,8 @@ export class SteveChatApp {
   syncBackdrop() {
     const settingsOpen = this.els.settingsSheet.classList.contains("show");
     const modelOpen = this.els.modelSheet.classList.contains("show");
-    const wideDrawerOpen = this.isWide() && this.getWideDrawerMode() === "open";
     const mobileDrawerOpen = !this.isWide() && this.els.drawer.classList.contains("open");
-    const show = settingsOpen || modelOpen || wideDrawerOpen || mobileDrawerOpen;
+    const show = settingsOpen || modelOpen || mobileDrawerOpen;
 
     this.els.backdrop.classList.toggle("show", show);
     this.els.backdrop.classList.toggle("settings-dim", settingsOpen);
@@ -1307,6 +1310,11 @@ export class SteveChatApp {
       : rawStatus;
     this.els.runtimeStatus.textContent = clippedStatus;
 
+    if (this.els.sessionBackendLabel) {
+      const backendName = this.state.backend === "qvac" ? "QVAC" : "Regular";
+      this.els.sessionBackendLabel.textContent = `Backend: ${backendName}`;
+    }
+
     if (this.els.statusDot) {
       if (!this.state.liveMode) {
         this.els.statusDot.style.background = "#6d7cb4";
@@ -1342,9 +1350,8 @@ export class SteveChatApp {
 
   renderLocalLlamaButton() {
     const connected = Boolean(this.state.localLlamaConnected);
-    const label = this.getBackendLabel();
     this.els.connectLocalLlamaBtn.classList.toggle("active", connected);
-    this.els.connectLocalLlamaBtn.textContent = connected ? `Connected ${label}` : `Connect ${label}`;
+    this.els.connectLocalLlamaBtn.textContent = "Connect";
   }
 
   toggleSpeechInput() {
@@ -1675,7 +1682,7 @@ export class SteveChatApp {
   async withRuntimeRetry(taskFn, {
     signal = null,
     baseUrl = "",
-    attempts = 4,
+    attempts = 6,
     warmupTimeoutMs = 22000,
     warmupIntervalMs = 700,
     phaseLabel = "Runtime call",
@@ -2144,7 +2151,7 @@ export class SteveChatApp {
         }), {
           signal,
           baseUrl: this.state.baseUrl,
-          attempts: 4,
+          attempts: 6,
           phaseLabel: "Stream call",
         });
 
@@ -2166,7 +2173,7 @@ export class SteveChatApp {
           }), {
             signal,
             baseUrl: this.state.baseUrl,
-            attempts: 4,
+            attempts: 6,
             phaseLabel: "Fallback completion",
           });
 
@@ -2227,7 +2234,7 @@ export class SteveChatApp {
       }), {
         signal,
         baseUrl: this.state.baseUrl,
-        attempts: 4,
+        attempts: 6,
         phaseLabel: "Completion call",
       });
 
