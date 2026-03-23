@@ -1465,6 +1465,57 @@ export class SteveChatApp {
     }
   }
 
+  isTransientRuntimeError(message = "") {
+    const msg = String(message || "");
+    return /Runtime not ready|Failed to fetch|NetworkError|HTTP\s*503|Loading model|No models returned|Empty reply|ECONN|timeout|fetch/i.test(msg);
+  }
+
+  async withRuntimeRetry(taskFn, {
+    signal = null,
+    baseUrl = "",
+    attempts = 2,
+    warmupTimeoutMs = 16000,
+    warmupIntervalMs = 700,
+    phaseLabel = "Runtime call",
+  } = {}) {
+    let lastErr = null;
+
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+      try {
+        return await taskFn();
+      } catch (err) {
+        const aborted = err?.name === "AbortError" || /aborted|abort/i.test(String(err?.message || ""));
+        if (aborted) throw err;
+
+        lastErr = err;
+        const msg = String(err?.message || err || "");
+        const transient = this.isTransientRuntimeError(msg);
+        const canRetry = transient && attempt < attempts;
+        if (!canRetry) throw err;
+
+        this.setRuntimeState("working", `${phaseLabel} hit transient runtime issue (${msg}). Retrying...`);
+
+        if (baseUrl) {
+          try {
+            await this.runtimeClient.fetchModelsWithRetry(baseUrl, {
+              timeoutMs: warmupTimeoutMs,
+              intervalMs: warmupIntervalMs,
+              signal,
+            });
+          } catch {
+            // ignore warmup failure; we'll still retry task once.
+          }
+        }
+
+        await this.runtimeClient.sleep(220, signal);
+      }
+    }
+
+    throw lastErr || new Error(`${phaseLabel} failed`);
+  }
+
   shortName(full) {
     const cleaned = full.split("/").pop() || full;
     return cleaned.replace(/\.gguf$/i, "");
@@ -1794,14 +1845,24 @@ export class SteveChatApp {
     let streamedText = "";
 
     try {
-      const readyModels = await this.runtimeClient.fetchModelsWithRetry(this.state.baseUrl, {
-        timeoutMs: 30000,
-        intervalMs: 800,
-        signal,
-      });
+      let readyModels = [];
+      try {
+        readyModels = await this.runtimeClient.fetchModelsWithRetry(this.state.baseUrl, {
+          timeoutMs: 8000,
+          intervalMs: 700,
+          signal,
+        });
+      } catch (preflightErr) {
+        const preflightMsg = String(preflightErr?.message || preflightErr || "");
+        if (!this.isTransientRuntimeError(preflightMsg)) {
+          throw preflightErr;
+        }
+        readyModels = Array.isArray(this.state.models) ? this.state.models : [];
+        this.setRuntimeState("working", `Runtime preflight unstable (${preflightMsg}). Using cached model selection...`);
+      }
 
       this.ensureModelProfilesPresent(readyModels);
-      if (!readyModels.some((m) => m.id === this.state.selectedModel)) {
+      if (readyModels.length > 0 && !readyModels.some((m) => m.id === this.state.selectedModel)) {
         const preferred = this.state.modelProfile && MODEL_PROFILES[this.state.modelProfile]
           ? MODEL_PROFILES[this.state.modelProfile].id
           : null;
@@ -1830,7 +1891,7 @@ export class SteveChatApp {
           total: promptPreviewTokens,
         });
 
-        let result = await this.runtimeClient.streamChat({
+        let result = await this.withRuntimeRetry(() => this.runtimeClient.streamChat({
           baseUrl: this.state.baseUrl,
           model: this.state.selectedModel,
           messages,
@@ -1868,11 +1929,16 @@ export class SteveChatApp {
 
             if (chunkCount % 4 === 0) this.renderPowerUi();
           },
+        }), {
+          signal,
+          baseUrl: this.state.baseUrl,
+          attempts: 2,
+          phaseLabel: "Stream call",
         });
 
         if (!streamedText.trim()) {
           this.setRuntimeState("working", "Empty stream reply, retrying once...");
-          const retry = await this.runtimeClient.completeOnce({
+          const retry = await this.withRuntimeRetry(() => this.runtimeClient.completeOnce({
             baseUrl: this.state.baseUrl,
             model: this.state.selectedModel,
             messages,
@@ -1885,6 +1951,11 @@ export class SteveChatApp {
             repeatPenalty: this.state.generation.repeatPenalty,
             customJson: this.state.generation.customRuntimeJson,
             signal,
+          }), {
+            signal,
+            baseUrl: this.state.baseUrl,
+            attempts: 2,
+            phaseLabel: "Fallback completion",
           });
 
           streamedText = String(retry?.reply || "").trim();
@@ -1928,7 +1999,7 @@ export class SteveChatApp {
       }
 
       const startedAt = performance.now();
-      const oneShot = await this.runtimeClient.completeOnce({
+      const oneShot = await this.withRuntimeRetry(() => this.runtimeClient.completeOnce({
         baseUrl: this.state.baseUrl,
         model: this.state.selectedModel,
         messages,
@@ -1941,6 +2012,11 @@ export class SteveChatApp {
         repeatPenalty: this.state.generation.repeatPenalty,
         customJson: this.state.generation.customRuntimeJson,
         signal,
+      }), {
+        signal,
+        baseUrl: this.state.baseUrl,
+        attempts: 2,
+        phaseLabel: "Completion call",
       });
 
       const elapsedMs = Math.max(1, performance.now() - startedAt);
