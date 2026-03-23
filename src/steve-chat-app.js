@@ -531,7 +531,8 @@ export class SteveChatApp {
     let gesture = null; // "open" | "close"
 
     const edgeWidth = 36;
-    const threshold = 56;
+    const closeEdgeWidth = 120;
+    const threshold = 34;
 
     const finish = () => {
       if (!active) return;
@@ -544,56 +545,55 @@ export class SteveChatApp {
       }
     };
 
-    const onDown = (e) => {
-      if (active) return;
-      if (this.els.settingsSheet.classList.contains("show") || this.els.modelSheet.classList.contains("show")) return;
-      if (e.pointerType === "mouse" && e.button !== 0) return;
-
+    const resolveGesture = (clientX) => {
       const wide = this.isWide();
       const drawerRect = this.els.drawer.getBoundingClientRect();
       const drawerIsOpen = wide
         ? this.getWideDrawerMode() === "open"
         : this.els.drawer.classList.contains("open");
 
-      const nearLeftEdge = e.clientX <= edgeWidth;
-      const nearDrawerRightEdge = Math.abs(e.clientX - drawerRect.right) <= edgeWidth;
-      const insideDrawer = e.clientX <= drawerRect.right;
+      const nearLeftEdge = clientX <= edgeWidth;
+      const nearDrawerRightEdge = Math.abs(clientX - drawerRect.right) <= closeEdgeWidth;
+      const insideDrawer = clientX <= drawerRect.right;
 
       if (wide) {
-        if (drawerIsOpen && nearDrawerRightEdge) {
-          gesture = "close";
-        } else if (!drawerIsOpen && nearLeftEdge) {
-          gesture = "open";
-        } else {
-          return;
-        }
-      } else {
-        if (drawerIsOpen && insideDrawer) {
-          gesture = "close";
-        } else if (!drawerIsOpen && nearLeftEdge) {
-          gesture = "open";
-        } else {
-          return;
-        }
+        if (drawerIsOpen && nearDrawerRightEdge) return "close";
+        if (!drawerIsOpen && nearLeftEdge) return "open";
+        return null;
       }
 
+      if (drawerIsOpen && insideDrawer) return "close";
+      if (!drawerIsOpen && nearLeftEdge) return "open";
+      return null;
+    };
+
+    const begin = (clientX, clientY, pid = null) => {
+      if (active) return false;
+      if (this.els.settingsSheet.classList.contains("show") || this.els.modelSheet.classList.contains("show")) return false;
+
+      const nextGesture = resolveGesture(clientX);
+      if (!nextGesture) return false;
+
       active = true;
-      pointerId = e.pointerId;
-      startX = e.clientX;
-      startY = e.clientY;
+      pointerId = pid;
+      startX = clientX;
+      startY = clientY;
+      gesture = nextGesture;
 
       if (host.setPointerCapture && pointerId != null) {
         try { host.setPointerCapture(pointerId); } catch { /* ignore */ }
       }
+
+      return true;
     };
 
-    const onUp = (e) => {
+    const complete = (clientX, clientY, pid = null) => {
       if (!active) return;
-      if (pointerId != null && e.pointerId !== pointerId) return;
+      if (pointerId != null && pid != null && pid !== pointerId) return;
 
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
-      const horizontal = Math.abs(dx) > Math.abs(dy) * 1.15;
+      const dx = clientX - startX;
+      const dy = clientY - startY;
+      const horizontal = Math.abs(dx) >= Math.abs(dy) * 0.65;
 
       if (horizontal && dx > threshold) {
         if (gesture === "open") this.toggleDrawer(true);
@@ -603,14 +603,40 @@ export class SteveChatApp {
       finish();
     };
 
+    const onDown = (e) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      begin(e.clientX, e.clientY, e.pointerId);
+    };
+
+    const onUp = (e) => {
+      complete(e.clientX, e.clientY, e.pointerId);
+    };
+
+    const onTouchStart = (e) => {
+      const t = e.changedTouches?.[0];
+      if (!t) return;
+      begin(t.clientX, t.clientY, null);
+    };
+
+    const onTouchEnd = (e) => {
+      const t = e.changedTouches?.[0];
+      if (!t) return;
+      complete(t.clientX, t.clientY, null);
+    };
+
     const onCancel = () => finish();
 
     host.addEventListener("pointerdown", onDown, { passive: true });
     host.addEventListener("pointerup", onUp, { passive: true });
     host.addEventListener("pointercancel", onCancel, { passive: true });
     host.addEventListener("lostpointercapture", onCancel, { passive: true });
+    host.addEventListener("touchstart", onTouchStart, { passive: true });
+    host.addEventListener("touchend", onTouchEnd, { passive: true });
+    host.addEventListener("touchcancel", onCancel, { passive: true });
     window.addEventListener("pointerup", onUp, { passive: true });
     window.addEventListener("pointercancel", onCancel, { passive: true });
+    window.addEventListener("touchend", onTouchEnd, { passive: true });
+    window.addEventListener("touchcancel", onCancel, { passive: true });
     window.addEventListener("blur", onCancel, { passive: true });
     document.addEventListener("visibilitychange", onCancel, { passive: true });
 
@@ -620,8 +646,13 @@ export class SteveChatApp {
         host.removeEventListener("pointerup", onUp);
         host.removeEventListener("pointercancel", onCancel);
         host.removeEventListener("lostpointercapture", onCancel);
+        host.removeEventListener("touchstart", onTouchStart);
+        host.removeEventListener("touchend", onTouchEnd);
+        host.removeEventListener("touchcancel", onCancel);
         window.removeEventListener("pointerup", onUp);
         window.removeEventListener("pointercancel", onCancel);
+        window.removeEventListener("touchend", onTouchEnd);
+        window.removeEventListener("touchcancel", onCancel);
         window.removeEventListener("blur", onCancel);
         document.removeEventListener("visibilitychange", onCancel);
       },
@@ -689,7 +720,7 @@ export class SteveChatApp {
 
     if (wide) {
       this.els.drawer.classList.toggle("open", mode === "open");
-      this.els.drawerCompactBtn.textContent = mode === "open" ? "◧" : (mode === "preview" ? "▤" : "☰");
+      this.els.drawerCompactBtn.textContent = mode === "open" ? "«" : (mode === "preview" ? "»" : "☰");
       this.els.drawerCompactBtn.title = mode === "open"
         ? "Switch drawer to preview"
         : (mode === "preview" ? "Switch drawer to closed" : "Open full drawer");
@@ -700,7 +731,7 @@ export class SteveChatApp {
       return;
     }
 
-    this.els.drawerCompactBtn.textContent = "◧";
+    this.els.drawerCompactBtn.textContent = "☰";
     this.els.drawerCompactBtn.title = "Toggle compact sidebar";
     this.els.settingsBtn.hidden = false;
     this.els.archivesBtn.hidden = false;
