@@ -395,6 +395,10 @@ start() {
   if wait_ready; then
     echo "[llama-cpp] ready at http://$HOST:$PORT ($BACKEND_LABEL)"
     curl -fsS "http://$HOST:$PORT/v1/models" | sed -n '1,80p'
+
+    if grep -Eqi 'no usable GPU found|compiled without GPU support|gpu-layers option will be ignored' "$LOG_FILE"; then
+      echo "[llama-cpp] NOTE: GPU offload not active; this backend is running CPU-only on current binary."
+    fi
   else
     echo "[llama-cpp] ERROR: server did not become ready. See $LOG_FILE" >&2
     tail -n 80 "$LOG_FILE" >&2 || true

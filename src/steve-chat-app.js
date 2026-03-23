@@ -128,6 +128,7 @@ export class SteveChatApp {
       runtimeState: "idle",
       runtimeStatusText: "Runtime ready.",
       runtimeErrorText: "",
+      runtimeGpuWarning: "",
       localLlamaConnected: false,
       power: {
         sessionEnergyMWh: 0,
@@ -171,6 +172,8 @@ export class SteveChatApp {
 
     this.state.runtimeTarget = "default";
     this.state.qvacRuntimeTarget = "default";
+    this.state.liveMode = true;
+    localStorage.setItem("steve.liveMode", "1");
 
     this.els.baseUrlInput.value = this.state.baseUrl;
     this.els.streamModeToggle.checked = Boolean(this.state.streamMode);
@@ -260,6 +263,7 @@ export class SteveChatApp {
 
     this.state.runtimeStatusText = String(this.state.runtimeStatusText || "Runtime ready.");
     this.state.runtimeErrorText = String(this.state.runtimeErrorText || "");
+    this.state.runtimeGpuWarning = String(this.state.runtimeGpuWarning || "");
 
     this.ensureModelProfilesPresent();
 
@@ -273,17 +277,45 @@ export class SteveChatApp {
     const profileModels = Object.values(MODEL_PROFILES).map((p) => ({ id: p.id, name: p.name }));
     const existing = Array.isArray(this.state.models) ? this.state.models : [];
 
-    const merged = [...runtime, ...existing, ...profileModels];
-    const seen = new Set();
-    this.state.models = merged.filter((m) => {
-      const id = String(m?.id || "").trim();
-      if (!id || seen.has(id)) return false;
-      seen.add(id);
-      return true;
-    }).map((m) => ({ id: String(m.id), name: String(m.name || this.shortName(m.id)) }));
+    const canonicalKey = (id) => this.shortName(String(id || "")).trim().toLowerCase();
 
-    if (!this.state.models.some((m) => m.id === this.state.selectedModel)) {
-      this.state.selectedModel = profileModels[0].id;
+    const merged = [...runtime, ...existing, ...profileModels];
+    const byKey = new Map();
+
+    for (const model of merged) {
+      const id = String(model?.id || "").trim();
+      if (!id) continue;
+
+      const key = canonicalKey(id) || id.toLowerCase();
+      const name = String(model?.name || this.shortName(id));
+      const normalized = { id, name };
+
+      const prev = byKey.get(key);
+      if (!prev) {
+        byKey.set(key, normalized);
+        continue;
+      }
+
+      // Prefer profile-labelled entries for readability in model picker.
+      const prevIsProfileName = /Gemma 3n/i.test(prev.name);
+      const nextIsProfileName = /Gemma 3n/i.test(normalized.name);
+      if (!prevIsProfileName && nextIsProfileName) {
+        byKey.set(key, normalized);
+      }
+    }
+
+    this.state.models = Array.from(byKey.values());
+
+    const selectedKey = canonicalKey(this.state.selectedModel || "");
+    const canonicalSelected = this.state.models.find((m) => canonicalKey(m.id) === selectedKey);
+    if (canonicalSelected) {
+      this.state.selectedModel = canonicalSelected.id;
+      localStorage.setItem("steve.model", this.state.selectedModel);
+      return;
+    }
+
+    if (this.state.models.length > 0) {
+      this.state.selectedModel = this.state.models[0].id;
       localStorage.setItem("steve.model", this.state.selectedModel);
     }
   }
@@ -337,6 +369,7 @@ export class SteveChatApp {
     localStorage.setItem("steve.baseUrl", this.state.baseUrl);
 
     this.state.localLlamaConnected = false;
+    if (backend !== "regular") this.state.runtimeGpuWarning = "";
     this.renderBackendUi();
     this.renderRuntimeTargetUi();
     this.renderLocalLlamaButton();
@@ -486,8 +519,8 @@ export class SteveChatApp {
     this.els.backendSelect?.addEventListener("change", (e) => this.setBackend(String(e.target?.value || "qvac")));
     this.els.applyModelProfileBtn?.addEventListener("click", () => this.applyModelProfile());
 
-    this.els.mockModeBtn.addEventListener("click", () => this.setMode(false));
-    this.els.runtimeModeBtn.addEventListener("click", () => this.setMode(true));
+    this.els.mockModeBtn?.addEventListener("click", () => this.setMode(false));
+    this.els.runtimeModeBtn?.addEventListener("click", () => this.setMode(true));
     this.els.streamModeToggle.addEventListener("change", (e) => {
       this.state.streamMode = Boolean(e.target.checked);
       localStorage.setItem("steve.streamMode", this.state.streamMode ? "1" : "0");
@@ -539,62 +572,65 @@ export class SteveChatApp {
     let pointerId = null;
     let startX = 0;
     let startY = 0;
-    let gesture = null; // "open" | "close"
+    let action = null;
+    let committed = false;
 
     const edgeWidth = 36;
-    const closeEdgeWidth = 120;
-    const threshold = 34;
+    const threshold = 28;
+
+    const isInteractiveTarget = (target) => Boolean(
+      target?.closest?.("button,input,select,textarea,a,.chat-item,[role='button']"),
+    );
 
     const finish = () => {
       if (!active) return;
       const pid = pointerId;
       active = false;
       pointerId = null;
-      gesture = null;
+      action = null;
+      committed = false;
       if (pid != null && host.releasePointerCapture) {
         try { host.releasePointerCapture(pid); } catch { /* ignore */ }
       }
     };
 
-    const resolveGesture = (clientX) => {
+    const resolveAction = (clientX, targetEl = null) => {
+      if (isInteractiveTarget(targetEl)) return null;
+
       const wide = this.isWide();
       const drawerRect = this.els.drawer.getBoundingClientRect();
-      const drawerIsOpen = wide
-        ? this.getWideDrawerMode() === "open"
-        : this.els.drawer.classList.contains("open");
+      const mode = wide
+        ? this.getWideDrawerMode()
+        : (this.els.drawer.classList.contains("open") ? "open" : "closed");
 
       const nearLeftEdge = clientX <= edgeWidth;
-      const nearDrawerRightEdge = Math.abs(clientX - drawerRect.right) <= closeEdgeWidth;
       const insideDrawer = clientX <= drawerRect.right;
 
       if (wide) {
-        const mode = this.getWideDrawerMode();
-        if (drawerIsOpen && nearDrawerRightEdge) return "close";
-        if (mode === "preview" && insideDrawer) return "open";
-        if (!drawerIsOpen && nearLeftEdge) return "open";
+        if (mode === "open" && insideDrawer) return "open_to_preview";
+        if (mode === "preview" && insideDrawer) return "preview_bidirectional";
+        if (mode === "closed" && nearLeftEdge) return "closed_to_open";
         return null;
       }
 
-      if (drawerIsOpen && insideDrawer) return "close";
-      if (!drawerIsOpen && nearLeftEdge) return "open";
+      if (mode === "open" && insideDrawer) return "mobile_open_to_closed";
+      if (mode === "closed" && nearLeftEdge) return "closed_to_open";
       return null;
     };
 
-    let gestureCommitted = false;
-
-    const begin = (clientX, clientY, pid = null) => {
+    const begin = (clientX, clientY, targetEl = null, pid = null) => {
       if (active) return false;
       if (this.els.settingsSheet.classList.contains("show") || this.els.modelSheet.classList.contains("show")) return false;
 
-      const nextGesture = resolveGesture(clientX);
-      if (!nextGesture) return false;
+      const nextAction = resolveAction(clientX, targetEl);
+      if (!nextAction) return false;
 
       active = true;
       pointerId = pid;
       startX = clientX;
       startY = clientY;
-      gesture = nextGesture;
-      gestureCommitted = false;
+      action = nextAction;
+      committed = false;
 
       if (host.setPointerCapture && pointerId != null) {
         try { host.setPointerCapture(pointerId); } catch { /* ignore */ }
@@ -604,26 +640,46 @@ export class SteveChatApp {
     };
 
     const maybeCommit = (clientX, clientY, pid = null) => {
-      if (!active || gestureCommitted) return false;
+      if (!active || committed) return false;
       if (pointerId != null && pid != null && pid !== pointerId) return false;
 
       const dx = clientX - startX;
       const dy = clientY - startY;
-      const horizontal = Math.abs(dx) >= Math.abs(dy) * 0.35;
-      if (!horizontal || dx <= threshold) return false;
+      const horizontal = Math.abs(dx) >= Math.abs(dy) * 0.45;
+      if (!horizontal) return false;
 
-      if (gesture === "open") {
+      if (action === "closed_to_open" && dx > threshold) {
         this.toggleDrawer(true);
-      } else if (gesture === "close") {
-        if (this.isWide() && this.getWideDrawerMode() === "open") {
-          this.setWideDrawerMode("preview");
-        } else {
-          this.toggleDrawer(false);
+        committed = true;
+        return true;
+      }
+
+      if (action === "open_to_preview" && dx < -threshold) {
+        this.setWideDrawerMode("preview");
+        committed = true;
+        return true;
+      }
+
+      if (action === "preview_bidirectional") {
+        if (dx > threshold) {
+          this.setWideDrawerMode("open");
+          committed = true;
+          return true;
+        }
+        if (dx < -threshold) {
+          this.setWideDrawerMode("closed");
+          committed = true;
+          return true;
         }
       }
 
-      gestureCommitted = true;
-      return true;
+      if (action === "mobile_open_to_closed" && dx < -threshold) {
+        this.toggleDrawer(false);
+        committed = true;
+        return true;
+      }
+
+      return false;
     };
 
     const complete = (clientX, clientY, pid = null) => {
@@ -633,7 +689,7 @@ export class SteveChatApp {
 
     const onDown = (e) => {
       if (e.pointerType === "mouse" && e.button !== 0) return;
-      begin(e.clientX, e.clientY, e.pointerId);
+      begin(e.clientX, e.clientY, e.target, e.pointerId);
     };
 
     const onMove = (e) => {
@@ -647,7 +703,7 @@ export class SteveChatApp {
     const onTouchStart = (e) => {
       const t = e.changedTouches?.[0];
       if (!t) return;
-      begin(t.clientX, t.clientY, null);
+      begin(t.clientX, t.clientY, e.target, null);
     };
 
     const onTouchMove = (e) => {
@@ -1190,9 +1246,14 @@ export class SteveChatApp {
     const messages = this.state.messages[this.state.activeChatId] || [];
     this.els.messages.innerHTML = "";
 
-    messages.forEach((msg) => {
+    messages.forEach((msg, messageIndex) => {
       const row = document.createElement("article");
       row.className = `msg-row ${msg.role}`;
+
+      const swipeCue = document.createElement("div");
+      swipeCue.className = "msg-swipe-cue";
+      swipeCue.textContent = "↩ Reply";
+      row.appendChild(swipeCue);
 
       const avatar = document.createElement("div");
       avatar.className = "avatar";
@@ -1244,6 +1305,19 @@ export class SteveChatApp {
 
       row.appendChild(avatar);
       row.appendChild(bubble);
+
+      if (!msg.pending) {
+        GestureService.bindSwipeAction(row, {
+          onRight: () => this.setReplyTarget(messageIndex, msg),
+          onLeft: () => this.setReplyTarget(messageIndex, msg),
+          threshold: 68,
+          previewClassRight: "swipe-preview-right",
+          previewClassLeft: "swipe-preview-left",
+          transformEl: bubble,
+          maxTranslate: 76,
+        });
+      }
+
       this.els.messages.appendChild(row);
     });
 
@@ -1294,21 +1368,20 @@ export class SteveChatApp {
   }
 
   renderModeUi() {
-    this.els.mockModeBtn.classList.toggle("active", !this.state.liveMode);
-    this.els.runtimeModeBtn.classList.toggle("active", this.state.liveMode);
-    this.els.streamModeToggle.checked = Boolean(this.state.streamMode);
-    this.els.ttsToggle.checked = Boolean(this.state.ttsEnabled);
+    this.els.mockModeBtn?.classList.toggle("active", !this.state.liveMode);
+    this.els.runtimeModeBtn?.classList.toggle("active", this.state.liveMode);
+    if (this.els.streamModeToggle) this.els.streamModeToggle.checked = Boolean(this.state.streamMode);
+    if (this.els.ttsToggle) this.els.ttsToggle.checked = Boolean(this.state.ttsEnabled);
 
     const chatDefaults = `Temp ${this.state.generation.temperature} • top-k ${this.state.generation.topK} • top-p ${this.state.generation.topP} • min-p ${this.state.generation.minP} • max ${this.state.generation.maxTokens}`;
-    this.els.modeHint.textContent = this.state.liveMode
-      ? `Local Runtime mode (${this.getBackendLabel()}) sends prompts with chat history to /v1/chat/completions. ${chatDefaults}.`
-      : `UI Demo mode uses mock Steve replies for flow testing. ${chatDefaults}.`;
+    this.els.modeHint.textContent = `Local Runtime (${this.getBackendLabel()}) uses chat history with /v1/chat/completions. ${chatDefaults}.`;
 
     const rawStatus = String(this.state.runtimeStatusText || "Runtime: idle.");
     const clippedStatus = this.state.runtimeState === "error" && rawStatus.length > 140
       ? `${rawStatus.slice(0, 140)}…`
       : rawStatus;
-    this.els.runtimeStatus.textContent = clippedStatus;
+    const gpuNote = this.state.runtimeGpuWarning ? ` ${this.state.runtimeGpuWarning}` : "";
+    this.els.runtimeStatus.textContent = `${clippedStatus}${gpuNote}`.trim();
 
     if (this.els.sessionBackendLabel) {
       const backendName = this.state.backend === "qvac" ? "QVAC" : "Regular";
@@ -1442,6 +1515,7 @@ export class SteveChatApp {
         modelIndex: profile.modelIndex,
         siteId: "steve-chat",
       });
+      this.applyRuntimeOutputDiagnostics(switched?.output);
 
       const endpoint = switched?.endpoint || this.getBackendEndpoint();
       this.state.baseUrl = endpoint;
@@ -1594,6 +1668,7 @@ export class SteveChatApp {
             modelIndex: profile.modelIndex,
             siteId: "steve-chat",
           });
+          this.applyRuntimeOutputDiagnostics(switched?.output);
 
           const endpoint = switched?.endpoint || this.getBackendEndpoint();
           this.state.baseUrl = endpoint;
@@ -1638,6 +1713,20 @@ export class SteveChatApp {
     return /Runtime not ready|Failed to fetch|NetworkError|HTTP\s*503|Loading model|No models returned|Empty reply|ECONN|timeout|fetch/i.test(msg);
   }
 
+  applyRuntimeOutputDiagnostics(outputText = "") {
+    const out = String(outputText || "");
+    const noGpu = /no usable GPU found|compiled without GPU support|GPU offload not active/i.test(out);
+
+    if (noGpu && this.state.backend === "regular") {
+      this.state.runtimeGpuWarning = "Regular llama.cpp on this install is CPU-only; use QVAC backend for GPU inference.";
+      return;
+    }
+
+    if (this.state.backend !== "regular") {
+      this.state.runtimeGpuWarning = "";
+    }
+  }
+
   async tryAutoRecoverLocalRuntime({ baseUrl = "", signal = null, reason = "" } = {}) {
     const endpoint = String(baseUrl || "").trim();
     if (!endpoint || endpoint !== this.getBackendEndpoint()) return false;
@@ -1652,6 +1741,7 @@ export class SteveChatApp {
         modelIndex: profile.modelIndex,
         siteId: "steve-chat",
       });
+      this.applyRuntimeOutputDiagnostics(switched?.output);
 
       const nextEndpoint = switched?.endpoint || this.getBackendEndpoint();
       this.state.baseUrl = nextEndpoint;

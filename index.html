@@ -109,11 +109,7 @@
         </div>
         <div class="settings-body simple-list">
           <section id="settingsSectionGeneral" class="settings-section active" data-section="all">
-            <h4 class="settings-subhead">Mode</h4>
-            <div class="mode-row">
-              <button id="mockModeBtn" class="secondary mode-btn active">UI Demo</button>
-              <button id="runtimeModeBtn" class="secondary mode-btn">Local Runtime</button>
-            </div>
+            <h4 class="settings-subhead">Runtime</h4>
             <div class="toggle-row">
               <label><input id="streamModeToggle" type="checkbox" checked /> Stream live responses</label>
               <label><input id="ttsToggle" type="checkbox" /> Speak assistant replies</label>
@@ -121,7 +117,7 @@
             <div class="drawer-row">
               <button id="settingsToggleThemeBtn" class="secondary">Toggle theme</button>
             </div>
-            <p id="modeHint" class="hint">UI Demo mode uses mock Steve replies for flow testing.</p>
+            <p id="modeHint" class="hint">Local Runtime sends prompts with chat history to /v1/chat/completions.</p>
 
             <h4 class="settings-subhead">Connectivity</h4>
             <label class="field-label" for="baseUrlInput">Model endpoint</label>

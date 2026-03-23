@@ -26,25 +26,24 @@ export class GestureService {
       if (previewClassLeft) el.classList.remove(previewClassLeft);
     };
 
-    const start = (e) => {
-      if (e.pointerType === "mouse" && e.button !== 0) return;
+    const startPoint = (x, y) => {
       active = true;
       dragAxis = "none";
-      sx = e.clientX;
-      sy = e.clientY;
+      sx = x;
+      sy = y;
       dx = 0;
       dy = 0;
       moveTarget.style.transition = "none";
     };
 
-    const move = (e) => {
+    const movePoint = (x, y) => {
       if (!active) return;
-      dx = e.clientX - sx;
-      dy = e.clientY - sy;
+      dx = x - sx;
+      dy = y - sy;
 
       if (dragAxis === "none") {
         if (Math.abs(dx) < 14 && Math.abs(dy) < 14) return;
-        if (Math.abs(dx) > Math.abs(dy) * 1.35) {
+        if (Math.abs(dx) > Math.abs(dy) * 1.2) {
           dragAxis = "x";
         } else {
           dragAxis = "y";
@@ -98,10 +97,34 @@ export class GestureService {
       else onLeft?.();
     };
 
-    el.addEventListener("pointerdown", start);
-    el.addEventListener("pointermove", move);
-    el.addEventListener("pointerup", () => finish(true));
-    el.addEventListener("pointercancel", () => finish(false));
-    el.addEventListener("lostpointercapture", () => finish(false));
+    const onPointerDown = (e) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      startPoint(e.clientX, e.clientY);
+    };
+
+    const onPointerMove = (e) => movePoint(e.clientX, e.clientY);
+
+    const onTouchStart = (e) => {
+      const t = e.changedTouches?.[0];
+      if (!t) return;
+      startPoint(t.clientX, t.clientY);
+    };
+
+    const onTouchMove = (e) => {
+      const t = e.changedTouches?.[0];
+      if (!t) return;
+      movePoint(t.clientX, t.clientY);
+    };
+
+    el.addEventListener("pointerdown", onPointerDown, { passive: true });
+    el.addEventListener("pointermove", onPointerMove, { passive: true });
+    el.addEventListener("pointerup", () => finish(true), { passive: true });
+    el.addEventListener("pointercancel", () => finish(false), { passive: true });
+    el.addEventListener("lostpointercapture", () => finish(false), { passive: true });
+
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: true });
+    el.addEventListener("touchend", () => finish(true), { passive: true });
+    el.addEventListener("touchcancel", () => finish(false), { passive: true });
   }
 }

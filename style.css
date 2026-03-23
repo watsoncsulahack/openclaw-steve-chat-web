@@ -191,8 +191,14 @@ body.theme-light {
   transition: opacity 90ms ease;
 }
 
-.msg-row.swipe-preview-right .msg-swipe-cue {
+.msg-row.swipe-preview-right .msg-swipe-cue,
+.msg-row.swipe-preview-left .msg-swipe-cue {
   opacity: 1;
+}
+
+.msg-row.user .msg-swipe-cue {
+  left: auto;
+  right: 2px;
 }
 
 .msg-row.user {
