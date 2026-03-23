@@ -212,58 +212,78 @@ export class RuntimeClient {
     let totalTokens = null;
     let tokenEvents = 0;
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    const throwIfAborted = () => {
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    };
 
-      buffer += decoder.decode(value, { stream: true });
-      const events = buffer.split("\n\n");
-      buffer = events.pop() || "";
+    const onAbort = async () => {
+      try {
+        await reader.cancel();
+      } catch {
+        // ignore
+      }
+    };
+    signal?.addEventListener?.("abort", onAbort, { once: true });
 
-      for (const event of events) {
-        const lines = event
-          .split("\n")
-          .map((l) => l.trim())
-          .filter(Boolean);
+    try {
+      while (true) {
+        throwIfAborted();
+        const { done, value } = await reader.read();
+        throwIfAborted();
+        if (done) break;
 
-        for (const line of lines) {
-          if (!line.startsWith("data:")) continue;
-          const payload = line.slice(5).trim();
-          if (!payload) continue;
-          if (payload === "[DONE]") {
-            return { tps: finalTps, promptTokens, completionTokens, totalTokens, tokenEvents };
-          }
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split("\n\n");
+        buffer = events.pop() || "";
 
-          let json;
-          try {
-            json = JSON.parse(payload);
-          } catch {
-            continue;
-          }
+        for (const event of events) {
+          const lines = event
+            .split("\n")
+            .map((l) => l.trim())
+            .filter(Boolean);
 
-          const token =
-            json?.choices?.[0]?.delta?.content ??
-            json?.choices?.[0]?.text ??
-            "";
+          for (const line of lines) {
+            throwIfAborted();
+            if (!line.startsWith("data:")) continue;
+            const payload = line.slice(5).trim();
+            if (!payload) continue;
+            if (payload === "[DONE]") {
+              return { tps: finalTps, promptTokens, completionTokens, totalTokens, tokenEvents };
+            }
 
-          if (token) {
-            tokenEvents += 1;
-            onToken?.(token);
-          }
+            let json;
+            try {
+              json = JSON.parse(payload);
+            } catch {
+              continue;
+            }
 
-          const tps = json?.timings?.predicted_per_second ?? json?.usage?.tokens_per_second;
-          if (tps != null) finalTps = tps;
+            const token =
+              json?.choices?.[0]?.delta?.content ??
+              json?.choices?.[0]?.text ??
+              "";
 
-          if (json?.usage) {
-            if (json.usage.prompt_tokens != null) promptTokens = json.usage.prompt_tokens;
-            if (json.usage.completion_tokens != null) completionTokens = json.usage.completion_tokens;
-            if (json.usage.total_tokens != null) totalTokens = json.usage.total_tokens;
+            if (token) {
+              tokenEvents += 1;
+              onToken?.(token);
+            }
+
+            const tps = json?.timings?.predicted_per_second ?? json?.usage?.tokens_per_second;
+            if (tps != null) finalTps = tps;
+
+            if (json?.usage) {
+              if (json.usage.prompt_tokens != null) promptTokens = json.usage.prompt_tokens;
+              if (json.usage.completion_tokens != null) completionTokens = json.usage.completion_tokens;
+              if (json.usage.total_tokens != null) totalTokens = json.usage.total_tokens;
+            }
           }
         }
       }
-    }
 
-    return { tps: finalTps, promptTokens, completionTokens, totalTokens, tokenEvents };
+      return { tps: finalTps, promptTokens, completionTokens, totalTokens, tokenEvents };
+    } finally {
+      signal?.removeEventListener?.("abort", onAbort);
+    }
   }
 
   async httpError(res) {

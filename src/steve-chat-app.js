@@ -495,6 +495,7 @@ export class SteveChatApp {
 
     this.els.messageInput.addEventListener("focus", () => {
       window.setTimeout(() => this.ensureComposerVisible(), 120);
+      window.setTimeout(() => this.ensureComposerVisible(), 300);
     });
 
     this.bindDrawerDragGesture();
@@ -707,10 +708,21 @@ export class SteveChatApp {
 
     this.applySidebarLayoutState();
     this.syncBackdrop();
+
+    if (document.activeElement === this.els.messageInput) {
+      window.setTimeout(() => this.scrollMessagesToBottom(), 40);
+      window.setTimeout(() => this.scrollMessagesToBottom(), 200);
+    }
   }
 
   ensureComposerVisible() {
     this.els.composer?.scrollIntoView({ block: "end", behavior: "auto" });
+    this.scrollMessagesToBottom();
+  }
+
+  scrollMessagesToBottom() {
+    if (!this.els?.messages) return;
+    this.els.messages.scrollTop = this.els.messages.scrollHeight;
   }
 
   toggleDrawer(open) {
@@ -1094,6 +1106,13 @@ export class SteveChatApp {
         reply.className = "bubble-reply";
         reply.textContent = `${msg.replyTo.role}: ${msg.replyTo.text}`;
         bubble.appendChild(reply);
+      }
+
+      if (msg.role === "steve" && msg.modelName) {
+        const modelMeta = document.createElement("div");
+        modelMeta.className = "msg-model";
+        modelMeta.textContent = String(msg.modelName);
+        bubble.appendChild(modelMeta);
       }
 
       const body = document.createElement("div");
@@ -1767,7 +1786,8 @@ export class SteveChatApp {
   async sendLive(text, chatId = this.state.activeChatId) {
     this.setRuntimeState("working", this.state.streamMode ? "Streaming response…" : "Waiting for live response…");
 
-    const assistantIndex = this.appendMessage("steve", "", { pending: true }, chatId);
+    const initialModelName = this.shortName(this.state.selectedModel || "model");
+    const assistantIndex = this.appendMessage("steve", "", { pending: true, modelName: initialModelName }, chatId);
     const messages = this.applyTemplateToMessages(this.buildRuntimeMessages(chatId));
     const controller = this.startInferenceController();
     const signal = controller.signal;
@@ -1793,6 +1813,9 @@ export class SteveChatApp {
       this.renderModels();
       this.syncModelLabel();
 
+      const activeModelName = this.shortName(this.state.selectedModel || "model");
+      this.patchMessage(chatId, assistantIndex, { modelName: activeModelName });
+
       if (this.state.streamMode) {
         let chunkCount = 0;
         let liveTps = null;
@@ -1807,7 +1830,7 @@ export class SteveChatApp {
           total: promptPreviewTokens,
         });
 
-        const result = await this.runtimeClient.streamChat({
+        let result = await this.runtimeClient.streamChat({
           baseUrl: this.state.baseUrl,
           model: this.state.selectedModel,
           messages,
@@ -1848,7 +1871,35 @@ export class SteveChatApp {
         });
 
         if (!streamedText.trim()) {
-          streamedText = "(empty reply)";
+          this.setRuntimeState("working", "Empty stream reply, retrying once...");
+          const retry = await this.runtimeClient.completeOnce({
+            baseUrl: this.state.baseUrl,
+            model: this.state.selectedModel,
+            messages,
+            maxTokens: Math.max(32, this.state.generation.maxTokens),
+            temperature: this.state.generation.temperature,
+            topP: this.state.generation.topP,
+            topK: this.state.generation.topK,
+            minP: this.state.generation.minP,
+            typicalP: this.state.generation.typicalP,
+            repeatPenalty: this.state.generation.repeatPenalty,
+            customJson: this.state.generation.customRuntimeJson,
+            signal,
+          });
+
+          streamedText = String(retry?.reply || "").trim();
+          if (!streamedText || streamedText === "(empty reply)") {
+            streamedText = "(empty reply)";
+          }
+
+          if (retry) {
+            result = {
+              tps: retry.tps,
+              promptTokens: retry.promptTokens,
+              completionTokens: retry.completionTokens,
+              totalTokens: retry.totalTokens,
+            };
+          }
         }
 
         const elapsedMs = Math.max(1, performance.now() - startedAt);
