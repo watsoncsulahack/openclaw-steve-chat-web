@@ -54,6 +54,7 @@ body.theme-light {
 .app-shell {
   min-height: 100dvh;
   padding: 0;
+  overflow-x: hidden;
 }
 
 .phone-frame {
@@ -176,14 +177,15 @@ body.theme-light {
   align-items: flex-end;
   gap: 8px;
   max-width: 90%;
-  width: fit-content;
+  min-width: 0;
+  width: auto;
   touch-action: pan-y;
   transition: transform 120ms ease;
 }
 
 .msg-swipe-cue {
   position: absolute;
-  left: 2px;
+  right: 4px;
   top: 50%;
   transform: translateY(-50%);
   font-size: 12px;
@@ -193,14 +195,8 @@ body.theme-light {
   transition: opacity 90ms ease;
 }
 
-.msg-row.swipe-preview-right .msg-swipe-cue,
 .msg-row.swipe-preview-left .msg-swipe-cue {
   opacity: 1;
-}
-
-.msg-row.user .msg-swipe-cue {
-  left: auto;
-  right: 2px;
 }
 
 .msg-row.user {
@@ -228,6 +224,7 @@ body.theme-light {
   white-space: pre-wrap;
   color: var(--text-strong);
   max-width: min(82vw, 100%);
+  min-width: 0;
   overflow: hidden;
 }
 
@@ -272,6 +269,9 @@ body.theme-light {
   border: 1px solid rgba(120, 140, 210, 0.25);
   border-radius: 6px;
   padding: 0 5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .msg-body .md-code {
@@ -287,7 +287,8 @@ body.theme-light {
   border: 0;
   background: transparent;
   padding: 0;
-  white-space: pre;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .msg-body .md-table-wrap {
@@ -787,6 +788,19 @@ body.theme-light #connectLocalLlamaBtn.active {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.toggle-row .reasoning-toggle-row.disabled {
+  opacity: 0.48;
+}
+
+.toggle-row .reasoning-toggle-row.disabled input {
+  cursor: not-allowed;
+}
+
+.reasoning-toggle-hint {
+  margin: 0;
+  font-size: 11px;
 }
 
 .toggle-row input[type="checkbox"] {

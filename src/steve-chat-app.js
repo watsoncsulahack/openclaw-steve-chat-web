@@ -52,6 +52,8 @@ export class SteveChatApp {
     this.recognition = null;
     this.drawerDrag = null;
     this.activeInferenceController = null;
+    this.reasoningProbeController = null;
+    this.reasoningProbeTimer = null;
     this.inferenceRunning = false;
 
     this.state = this.storage.load(this.createInitialState());
@@ -86,6 +88,16 @@ export class SteveChatApp {
     const customRuntimeJson = localStorage.getItem("steve.customRuntimeJson") || "";
     const chatTemplate = localStorage.getItem("steve.chatTemplate") || "none";
     const customTemplate = localStorage.getItem("steve.customTemplate") || "";
+    let reasoningCapabilityByModel = {};
+    try {
+      const rawCaps = localStorage.getItem("steve.reasoningCapabilityByModel") || "{}";
+      const parsedCaps = JSON.parse(rawCaps);
+      if (parsedCaps && typeof parsedCaps === "object" && !Array.isArray(parsedCaps)) {
+        reasoningCapabilityByModel = parsedCaps;
+      }
+    } catch {
+      reasoningCapabilityByModel = {};
+    }
 
     const storedWideDrawerMode = localStorage.getItem("steve.wideDrawerMode") || "";
     const legacySidebarCollapsed = localStorage.getItem("steve.sidebarCollapsed") === "1";
@@ -111,6 +123,7 @@ export class SteveChatApp {
       streamMode: localStorage.getItem("steve.streamMode") !== "0",
       ttsEnabled: localStorage.getItem("steve.ttsEnabled") === "1",
       reasoningEnabled: localStorage.getItem("steve.reasoningEnabled") !== "0",
+      reasoningCapabilityByModel,
       settingsSection: "general",
       generation: {
         maxTokens: Number.isFinite(maxTokensRaw) ? Math.max(16, Math.min(4096, Math.round(maxTokensRaw))) : 300,
@@ -197,6 +210,7 @@ export class SteveChatApp {
     this.bindViewportFixes();
     this.syncViewport();
     this.renderAll();
+    this.queueReasoningCapabilityProbe();
   }
 
   ensureStateDefaults() {
@@ -250,6 +264,9 @@ export class SteveChatApp {
     }
 
     this.state.reasoningEnabled = this.state.reasoningEnabled !== false;
+    if (!this.state.reasoningCapabilityByModel || typeof this.state.reasoningCapabilityByModel !== "object" || Array.isArray(this.state.reasoningCapabilityByModel)) {
+      this.state.reasoningCapabilityByModel = {};
+    }
 
     if (!["open", "preview", "closed"].includes(String(this.state.wideDrawerMode || ""))) {
       this.state.wideDrawerMode = this.state.sidebarCollapsed ? "preview" : "open";
@@ -377,6 +394,8 @@ export class SteveChatApp {
     this.renderBackendUi();
     this.renderRuntimeTargetUi();
     this.renderLocalLlamaButton();
+    this.renderReasoningToggleAvailability();
+    this.queueReasoningCapabilityProbe({ force: true });
 
     const runtimeLabel = this.getBackendLabel();
     this.setRuntimeState("idle", `Selected runtime: ${runtimeLabel}. Endpoint set to ${this.state.baseUrl}`);
@@ -1370,7 +1389,7 @@ export class SteveChatApp {
 
       const swipeCue = document.createElement("div");
       swipeCue.className = "msg-swipe-cue";
-      swipeCue.textContent = "↩ Reply";
+      swipeCue.textContent = "← Reply";
       row.appendChild(swipeCue);
 
       const avatar = document.createElement("div");
@@ -1444,13 +1463,11 @@ export class SteveChatApp {
 
       if (!msg.pending) {
         GestureService.bindSwipeAction(row, {
-          onRight: () => this.setReplyTarget(messageIndex, msg),
           onLeft: () => this.setReplyTarget(messageIndex, msg),
-          threshold: 44,
-          previewClassRight: "swipe-preview-right",
+          threshold: 26,
           previewClassLeft: "swipe-preview-left",
           transformEl: bubble,
-          maxTranslate: 88,
+          maxTranslate: 64,
         });
       }
 
@@ -1472,6 +1489,7 @@ export class SteveChatApp {
         this.syncModelLabel();
         this.renderModels();
         this.toggleModelSheet(false);
+        this.queueReasoningCapabilityProbe({ force: true });
 
         const profileKey = this.profileKeyForModelId(model.id);
         if (profileKey) {
@@ -1485,6 +1503,7 @@ export class SteveChatApp {
   syncModelLabel() {
     const model = this.state.models.find((m) => m.id === this.state.selectedModel);
     this.els.currentModelLabel.textContent = model?.name || this.state.selectedModel;
+    this.renderReasoningToggleAvailability();
   }
 
   setMode(live) {
@@ -1503,12 +1522,171 @@ export class SteveChatApp {
     if (this.els.modelProfileSelect) this.els.modelProfileSelect.value = this.state.modelProfile || "e4b";
   }
 
+  persistReasoningCapabilityCache() {
+    try {
+      localStorage.setItem("steve.reasoningCapabilityByModel", JSON.stringify(this.state.reasoningCapabilityByModel || {}));
+    } catch {
+      // ignore localStorage write errors
+    }
+  }
+
+  getReasoningCapabilityKey(modelId = "") {
+    return `${this.state.backend || "regular"}::${String(modelId || "").trim()}`;
+  }
+
+  getReasoningCapabilityState(modelId = "") {
+    const modelKey = String(modelId || "").trim();
+    if (!modelKey) return "unknown";
+    const key = this.getReasoningCapabilityKey(modelKey);
+    const entry = this.state.reasoningCapabilityByModel?.[key];
+    if (!entry) return "unknown";
+    const state = String(entry.state || "unknown").toLowerCase();
+    if (["supported", "unsupported", "checking", "unknown"].includes(state)) return state;
+    return "unknown";
+  }
+
+  setReasoningCapabilityState(modelId = "", state = "unknown") {
+    const modelKey = String(modelId || "").trim();
+    if (!modelKey) return;
+    const key = this.getReasoningCapabilityKey(modelKey);
+    const normalized = ["supported", "unsupported", "checking", "unknown"].includes(String(state))
+      ? String(state)
+      : "unknown";
+    if (!this.state.reasoningCapabilityByModel || typeof this.state.reasoningCapabilityByModel !== "object") {
+      this.state.reasoningCapabilityByModel = {};
+    }
+    this.state.reasoningCapabilityByModel[key] = {
+      state: normalized,
+      checkedAt: Date.now(),
+    };
+    this.persistReasoningCapabilityCache();
+  }
+
+  renderReasoningToggleAvailability() {
+    const input = this.els.reasoningToggle;
+    const row = this.els.reasoningToggleRow;
+    const hint = this.els.reasoningToggleHint;
+    if (!input || !row) return;
+
+    const modelId = String(this.state.selectedModel || "").trim();
+    const capability = this.getReasoningCapabilityState(modelId);
+
+    let selectable = true;
+    let hintText = "Runtime reasoning output can be toggled when selected model supports it.";
+
+    if (capability === "checking") {
+      selectable = false;
+      hintText = "Checking reasoning compatibility for selected model…";
+    } else if (capability === "unsupported") {
+      selectable = false;
+      hintText = "Reasoning output unavailable for current model/runtime response mode.";
+    } else if (capability === "supported") {
+      selectable = true;
+      hintText = "Reasoning output available for this model.";
+    } else {
+      selectable = false;
+      hintText = "Reasoning compatibility not verified yet."
+    }
+
+    input.disabled = !selectable;
+    row.classList.toggle("disabled", !selectable);
+    if (!selectable && this.state.reasoningEnabled) {
+      this.state.reasoningEnabled = false;
+      localStorage.setItem("steve.reasoningEnabled", "0");
+    }
+    input.checked = Boolean(this.state.reasoningEnabled && selectable);
+
+    if (hint) hint.textContent = hintText;
+  }
+
+  queueReasoningCapabilityProbe({ force = false } = {}) {
+    if (!this.state.liveMode) return;
+
+    const modelId = String(this.state.selectedModel || "").trim();
+    if (!modelId) return;
+
+    const state = this.getReasoningCapabilityState(modelId);
+    if (!force && (state === "supported" || state === "unsupported" || state === "checking")) {
+      this.renderReasoningToggleAvailability();
+      return;
+    }
+
+    clearTimeout(this.reasoningProbeTimer);
+    this.reasoningProbeTimer = window.setTimeout(() => {
+      this.probeReasoningCapabilityForSelectedModel({ force }).catch(() => {
+        // handled in probe
+      });
+    }, 120);
+  }
+
+  async probeReasoningCapabilityForSelectedModel({ force = false } = {}) {
+    if (!this.state.liveMode) return;
+
+    if (this.inferenceRunning) {
+      this.queueReasoningCapabilityProbe({ force });
+      return;
+    }
+
+    const modelId = String(this.state.selectedModel || "").trim();
+    if (!modelId) return;
+
+    const known = this.getReasoningCapabilityState(modelId);
+    if (!force && (known === "supported" || known === "unsupported")) {
+      this.renderReasoningToggleAvailability();
+      return;
+    }
+
+    this.setReasoningCapabilityState(modelId, "checking");
+    this.renderReasoningToggleAvailability();
+
+    this.reasoningProbeController?.abort?.();
+    this.reasoningProbeController = new AbortController();
+
+    try {
+      const probe = await this.withRuntimeRetry(() => this.runtimeClient.completeOnce({
+        baseUrl: this.state.baseUrl,
+        model: modelId,
+        messages: [{ role: "user", content: "Solve 19+23 and show short reasoning then final answer." }],
+        maxTokens: 96,
+        temperature: 0,
+        topP: 0.9,
+        topK: 24,
+        minP: 0.03,
+        typicalP: 1,
+        repeatPenalty: 1,
+        reasoningEnabled: true,
+        signal: this.reasoningProbeController.signal,
+      }), {
+        signal: this.reasoningProbeController.signal,
+        baseUrl: this.state.baseUrl,
+        attempts: 3,
+        phaseLabel: "Reasoning capability probe",
+      });
+
+      const content = String(probe?.content || probe?.reply || "").trim();
+      const reasoning = String(probe?.reasoning || "").trim();
+      const hasReasoningTag = /<think>|<\|START_THINKING\|>|<\|END_THINKING\|>/i.test(content);
+      const supported = Boolean(reasoning) || hasReasoningTag;
+
+      this.setReasoningCapabilityState(modelId, supported ? "supported" : "unsupported");
+    } catch (err) {
+      const aborted = err?.name === "AbortError";
+      if (!aborted) {
+        this.setReasoningCapabilityState(modelId, "unknown");
+      }
+    } finally {
+      this.renderReasoningToggleAvailability();
+      this.schedulePersist();
+    }
+  }
+
   renderModeUi() {
     this.els.mockModeBtn?.classList.toggle("active", !this.state.liveMode);
     this.els.runtimeModeBtn?.classList.toggle("active", this.state.liveMode);
     if (this.els.streamModeToggle) this.els.streamModeToggle.checked = Boolean(this.state.streamMode);
     if (this.els.ttsToggle) this.els.ttsToggle.checked = Boolean(this.state.ttsEnabled);
     if (this.els.reasoningToggle) this.els.reasoningToggle.checked = Boolean(this.state.reasoningEnabled);
+    this.renderReasoningToggleAvailability();
 
     const chatDefaults = `Temp ${this.state.generation.temperature} • top-k ${this.state.generation.topK} • top-p ${this.state.generation.topP} • min-p ${this.state.generation.minP} • max ${this.state.generation.maxTokens}`;
     this.els.modeHint.textContent = `Local Runtime (${this.getBackendLabel()}) uses chat history with /v1/chat/completions. ${chatDefaults}.`;
@@ -1665,6 +1843,7 @@ export class SteveChatApp {
       this.ensureModelProfilesPresent([{ id: profile.id, name: profile.name }]);
       this.syncModelLabel();
       this.renderModels();
+      this.queueReasoningCapabilityProbe({ force: true });
       this.state.localLlamaConnected = true;
       this.renderLocalLlamaButton();
 
@@ -1781,6 +1960,7 @@ export class SteveChatApp {
 
       this.renderModels();
       this.syncModelLabel();
+      this.queueReasoningCapabilityProbe();
 
       const localHit = this.state.baseUrl === this.getBackendEndpoint();
       this.state.localLlamaConnected = localHit;
@@ -1821,6 +2001,7 @@ export class SteveChatApp {
           this.ensureModelProfilesPresent(listed);
           this.renderModels();
           this.syncModelLabel();
+          this.queueReasoningCapabilityProbe();
           this.state.localLlamaConnected = true;
           this.renderLocalLlamaButton();
           this.setRuntimeState("ok", `Connected ${this.getBackendLabel()} (auto-started runtime).`);
@@ -1895,6 +2076,7 @@ export class SteveChatApp {
       this.ensureModelProfilesPresent(listed);
       this.renderModels();
       this.syncModelLabel();
+      this.queueReasoningCapabilityProbe();
       this.state.localLlamaConnected = true;
       this.renderLocalLlamaButton();
       this.setRuntimeState("ok", `Connected ${this.getBackendLabel()} (auto-recovered).`);
@@ -2320,6 +2502,7 @@ export class SteveChatApp {
       }
       this.renderModels();
       this.syncModelLabel();
+      this.queueReasoningCapabilityProbe();
 
       const activeModelName = this.shortName(this.state.selectedModel || "model");
       this.patchMessage(chatId, assistantIndex, { modelName: activeModelName });

@@ -39,6 +39,8 @@ export function getDomRefs() {
     streamModeToggle: $("streamModeToggle"),
     ttsToggle: $("ttsToggle"),
     reasoningToggle: $("reasoningToggle"),
+    reasoningToggleRow: $("reasoningToggleRow"),
+    reasoningToggleHint: $("reasoningToggleHint"),
     statusDot: document.querySelector(".status-dot"),
     themeToggleBtn: $("themeToggleBtn"),
     micBtn: $("micBtn"),

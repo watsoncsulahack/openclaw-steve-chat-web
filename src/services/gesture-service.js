@@ -3,7 +3,7 @@ export class GestureService {
     onLeft,
     onRight,
     onTap,
-    threshold = 56,
+    threshold = 24,
     previewClassRight,
     previewClassLeft,
     transformEl = null,
@@ -19,6 +19,7 @@ export class GestureService {
     let axis = "none";
     let pointerId = null;
     let captured = false;
+    let pointerDriven = false;
 
     const resetVisual = () => {
       moveTarget.style.transition = "transform 140ms ease, opacity 140ms ease";
@@ -51,7 +52,7 @@ export class GestureService {
         if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
 
         // Bias slightly toward horizontal so swipe-reply is easier on phones.
-        if (Math.abs(dx) >= Math.abs(dy) * 0.85) {
+        if (Math.abs(dx) >= Math.abs(dy) * 0.55) {
           axis = "x";
         } else {
           axis = "y";
@@ -79,7 +80,7 @@ export class GestureService {
       moveTarget.style.opacity = "0.94";
 
       if (previewClassRight || previewClassLeft) {
-        const dir = clamped > 18 ? "right" : clamped < -18 ? "left" : "none";
+        const dir = clamped > 8 ? "right" : clamped < -8 ? "left" : "none";
         if (previewClassRight) el.classList.toggle(previewClassRight, dir === "right");
         if (previewClassLeft) el.classList.toggle(previewClassLeft, dir === "left");
       }
@@ -105,6 +106,7 @@ export class GestureService {
       axis = "none";
       pointerId = null;
       captured = false;
+      pointerDriven = false;
       sx = 0;
       sy = 0;
       dx = 0;
@@ -128,23 +130,32 @@ export class GestureService {
 
     const onPointerDown = (e) => {
       if (e.pointerType === "mouse" && e.button !== 0) return;
+      pointerDriven = true;
       start(e.clientX, e.clientY, e.pointerId);
+      if (el.setPointerCapture) {
+        try {
+          el.setPointerCapture(e.pointerId);
+          captured = true;
+        } catch {
+          // ignore
+        }
+      }
     };
 
     const onPointerMove = (e) => move(e.clientX, e.clientY, e, e.pointerId);
 
-    // Pointer events cover modern Android/iOS + desktop.
+    // Pointer events for modern engines.
     if (window.PointerEvent) {
       el.addEventListener("pointerdown", onPointerDown, { passive: true });
       el.addEventListener("pointermove", onPointerMove, { passive: false });
       el.addEventListener("pointerup", () => finish(true), { passive: true });
       el.addEventListener("pointercancel", () => finish(false), { passive: true });
       el.addEventListener("lostpointercapture", () => finish(false), { passive: true });
-      return;
     }
 
-    // Fallback for old engines.
+    // Touch fallback (and safety net on quirky webviews).
     const onTouchStart = (e) => {
+      if (pointerDriven) return;
       const t = e.changedTouches?.[0];
       if (!t) return;
       start(t.clientX, t.clientY, null);
