@@ -1545,6 +1545,14 @@ export class SteveChatApp {
     return "unknown";
   }
 
+  getReasoningCapabilityEntry(modelId = "") {
+    const modelKey = String(modelId || "").trim();
+    if (!modelKey) return null;
+    const key = this.getReasoningCapabilityKey(modelKey);
+    const entry = this.state.reasoningCapabilityByModel?.[key];
+    return entry && typeof entry === "object" ? entry : null;
+  }
+
   setReasoningCapabilityState(modelId = "", state = "unknown") {
     const modelKey = String(modelId || "").trim();
     if (!modelKey) return;
@@ -1569,7 +1577,18 @@ export class SteveChatApp {
     if (!input || !row) return;
 
     const modelId = String(this.state.selectedModel || "").trim();
-    const capability = this.getReasoningCapabilityState(modelId);
+    let capability = this.getReasoningCapabilityState(modelId);
+    const capEntry = this.getReasoningCapabilityEntry(modelId);
+
+    // Recover from stale checking states (e.g., interrupted probe / runtime stall).
+    if (capability === "checking") {
+      const checkedAt = Number(capEntry?.checkedAt || 0);
+      const ageMs = checkedAt > 0 ? (Date.now() - checkedAt) : Number.POSITIVE_INFINITY;
+      if (ageMs > 30000) {
+        this.setReasoningCapabilityState(modelId, "unknown");
+        capability = "unknown";
+      }
+    }
 
     let selectable = true;
     let hintText = "Runtime reasoning output can be toggled when selected model supports it.";
@@ -1585,7 +1604,7 @@ export class SteveChatApp {
       hintText = "Reasoning output available for this model.";
     } else {
       selectable = false;
-      hintText = "Reasoning compatibility not verified yet."
+      hintText = "Reasoning compatibility not verified yet.";
     }
 
     input.disabled = !selectable;
@@ -1606,9 +1625,19 @@ export class SteveChatApp {
     if (!modelId) return;
 
     const state = this.getReasoningCapabilityState(modelId);
-    if (!force && (state === "supported" || state === "unsupported" || state === "checking")) {
+    if (!force && (state === "supported" || state === "unsupported")) {
       this.renderReasoningToggleAvailability();
       return;
+    }
+
+    if (!force && state === "checking") {
+      const entry = this.getReasoningCapabilityEntry(modelId);
+      const checkedAt = Number(entry?.checkedAt || 0);
+      const ageMs = checkedAt > 0 ? (Date.now() - checkedAt) : Number.POSITIVE_INFINITY;
+      if (ageMs < 30000) {
+        this.renderReasoningToggleAvailability();
+        return;
+      }
     }
 
     clearTimeout(this.reasoningProbeTimer);
@@ -1641,6 +1670,10 @@ export class SteveChatApp {
 
     this.reasoningProbeController?.abort?.();
     this.reasoningProbeController = new AbortController();
+    const probeSignal = this.reasoningProbeController.signal;
+    const probeTimeout = window.setTimeout(() => {
+      this.reasoningProbeController?.abort?.();
+    }, 15000);
 
     try {
       const probe = await this.withRuntimeRetry(() => this.runtimeClient.completeOnce({
@@ -1655,29 +1688,43 @@ export class SteveChatApp {
         typicalP: 1,
         repeatPenalty: 1,
         reasoningEnabled: true,
-        signal: this.reasoningProbeController.signal,
+        signal: probeSignal,
       }), {
-        signal: this.reasoningProbeController.signal,
+        signal: probeSignal,
         baseUrl: this.state.baseUrl,
-        attempts: 3,
+        attempts: 2,
         phaseLabel: "Reasoning capability probe",
       });
 
-      const content = String(probe?.content || probe?.reply || "").trim();
-      const reasoning = String(probe?.reasoning || "").trim();
-      const hasReasoningTag = /<think>|<\|START_THINKING\|>|<\|END_THINKING\|>/i.test(content);
-      const supported = Boolean(reasoning) || hasReasoningTag;
-
-      this.setReasoningCapabilityState(modelId, supported ? "supported" : "unsupported");
+      this.updateReasoningCapabilityFromResponse({
+        modelId,
+        content: probe?.content || probe?.reply,
+        reasoning: probe?.reasoning,
+      });
     } catch (err) {
       const aborted = err?.name === "AbortError";
-      if (!aborted) {
-        this.setReasoningCapabilityState(modelId, "unknown");
-      }
+      // If probe stalls or runtime is unavailable, fail closed (dim/disabled)
+      // so we do not leave UI in perpetual "checking".
+      this.setReasoningCapabilityState(modelId, aborted ? "unsupported" : "unknown");
     } finally {
+      clearTimeout(probeTimeout);
+      this.reasoningProbeController = null;
       this.renderReasoningToggleAvailability();
       this.schedulePersist();
     }
+  }
+
+  updateReasoningCapabilityFromResponse({ modelId = "", content = "", reasoning = "" } = {}) {
+    const id = String(modelId || this.state.selectedModel || "").trim();
+    if (!id) return;
+
+    const body = String(content || "").trim();
+    const reason = String(reasoning || "").trim();
+    const hasReasoningTag = /<think>|<\|START_THINKING\|>|<\|END_THINKING\|>/i.test(body);
+    const supported = Boolean(reason) || hasReasoningTag;
+
+    this.setReasoningCapabilityState(id, supported ? "supported" : "unsupported");
+    this.renderReasoningToggleAvailability();
   }
 
   renderModeUi() {
@@ -2502,7 +2549,6 @@ export class SteveChatApp {
       }
       this.renderModels();
       this.syncModelLabel();
-      this.queueReasoningCapabilityProbe();
 
       const activeModelName = this.shortName(this.state.selectedModel || "model");
       this.patchMessage(chatId, assistantIndex, { modelName: activeModelName });
@@ -2651,6 +2697,11 @@ export class SteveChatApp {
         this.renderPowerUi();
         this.renderTokenUi();
         this.speakText(display.text);
+        this.updateReasoningCapabilityFromResponse({
+          modelId: this.state.selectedModel,
+          content: streamedText,
+          reasoning: streamedReasoning,
+        });
         this.setRuntimeState("ok", `Live stream complete. Session energy ${this.formatEnergyMWh(this.state.power.sessionEnergyMWh)}.`);
         return;
       }
@@ -2704,6 +2755,11 @@ export class SteveChatApp {
       this.renderPowerUi();
       this.renderTokenUi();
       this.speakText(display.text);
+      this.updateReasoningCapabilityFromResponse({
+        modelId: this.state.selectedModel,
+        content: oneShot.content || oneShot.reply,
+        reasoning: oneShot.reasoning,
+      });
       this.setRuntimeState("ok", `Live response complete. Session energy ${this.formatEnergyMWh(this.state.power.sessionEnergyMWh)}.`);
     } catch (err) {
       const aborted = err?.name === "AbortError" || /aborted|abort/i.test(String(err?.message || ""));

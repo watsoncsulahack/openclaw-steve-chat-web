@@ -45,8 +45,8 @@ body.theme-light {
   --text-strong: #162347;
   --muted: #586995;
   --line: #bcc8ef;
-  --steve: #dce6ff;
-  --user: #4f6df0;
+  --steve: #edf3ff;
+  --user: #6f8dff;
   --user-text: #f7f9ff;
   background: linear-gradient(180deg, #eaf0ff, #f7f9ff);
 }
@@ -359,6 +359,8 @@ body.theme-light {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  min-width: 0;
+  overflow: hidden;
   border-top: 1px solid var(--line);
   background: var(--surface-1);
   padding: 8px 10px;
@@ -371,6 +373,8 @@ body.theme-light {
 .reply-banner-text {
   font-size: 13px;
   color: var(--muted);
+  flex: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -830,12 +834,29 @@ body.theme-light .composer-mic {
   color: #1c2a4f;
 }
 
+body.theme-light .msg-row.steve .bubble {
+  background: #edf3ff;
+  border-color: #c3d1f6;
+  color: #1a2b53;
+}
+
+body.theme-light .avatar {
+  background: #f6f9ff;
+  border-color: #c8d4f2;
+  color: #2f4c8a;
+}
+
 body.theme-light .mic-glyph {
   stroke: #23376a;
 }
 
 body.theme-light .send-glyph {
   stroke: #f7f9ff;
+}
+
+body.theme-light .composer-send {
+  background: #6f8dff;
+  border-color: #8ea6ff;
 }
 
 body.theme-light .status-dot {
@@ -859,6 +880,11 @@ body.theme-light .reasoning-block {
 
 body.theme-light .reasoning-block > summary {
   color: #2f4f9a;
+}
+
+body.theme-light .bubble-reply {
+  color: #3f5f9f;
+  border-left-color: #7d98df;
 }
 
 .composer-mic {
