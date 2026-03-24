@@ -23,15 +23,25 @@ const QVAC_RUNTIME_TARGETS = {
 };
 
 const MODEL_PROFILES = {
+  bitnet1: {
+    id: "1bitLLM-bitnet_b1_58-xl-tq1_0.gguf",
+    name: "BitNet B1.58 XL (1-bit tq1)",
+    modelIndex: 1,
+  },
+  bitnet2: {
+    id: "1bitLLM-bitnet_b1_58-xl-tq2_0.gguf",
+    name: "BitNet B1.58 XL (2-bit tq2)",
+    modelIndex: 2,
+  },
   e2b: {
     id: "gemma-3n-E2B-it-UD-Q4_K_XL.gguf",
     name: "Gemma 3n E2B",
-    modelIndex: 1,
+    modelIndex: 3,
   },
   e4b: {
     id: "gemma-3n-E4B-it-UD-Q4_K_XL.gguf",
     name: "Gemma 3n E4B (4B profile)",
-    modelIndex: 2,
+    modelIndex: 4,
   },
 };
 
@@ -1381,7 +1391,13 @@ export class SteveChatApp {
 
   renderMessages() {
     const messages = this.state.messages[this.state.activeChatId] || [];
-    this.els.messages.innerHTML = "";
+    const scroller = this.els.messages;
+    const prevScrollTop = scroller.scrollTop;
+    const prevScrollHeight = scroller.scrollHeight;
+    const distanceFromBottom = prevScrollHeight - (prevScrollTop + scroller.clientHeight);
+    const shouldStickBottom = distanceFromBottom <= 72;
+
+    scroller.innerHTML = "";
 
     messages.forEach((msg, messageIndex) => {
       const row = document.createElement("article");
@@ -1471,10 +1487,14 @@ export class SteveChatApp {
         });
       }
 
-      this.els.messages.appendChild(row);
+      scroller.appendChild(row);
     });
 
-    this.els.messages.scrollTop = this.els.messages.scrollHeight;
+    if (shouldStickBottom) {
+      scroller.scrollTop = scroller.scrollHeight;
+    } else {
+      scroller.scrollTop = Math.min(prevScrollTop, Math.max(0, scroller.scrollHeight - scroller.clientHeight));
+    }
   }
 
   renderModels() {
@@ -2246,8 +2266,8 @@ export class SteveChatApp {
   formatPower(milliwatts) {
     const n = Number(milliwatts);
     if (!Number.isFinite(n)) return "--";
-    const watts = Math.max(0, n / 1000);
-    return `${watts >= 10 ? watts.toFixed(1) : watts.toFixed(2)} W`;
+    const mw = Math.max(0, n);
+    return `${mw >= 100 ? mw.toFixed(0) : mw.toFixed(1)} mW/s`;
   }
 
   formatEnergyMWh(mWh) {
