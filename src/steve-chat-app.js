@@ -1621,6 +1621,12 @@ export class SteveChatApp {
   queueReasoningCapabilityProbe({ force = false } = {}) {
     if (!this.state.liveMode) return;
 
+    if (!force && this.state.runtimeState === "working") {
+      clearTimeout(this.reasoningProbeTimer);
+      this.reasoningProbeTimer = window.setTimeout(() => this.queueReasoningCapabilityProbe(), 1200);
+      return;
+    }
+
     const modelId = String(this.state.selectedModel || "").trim();
     if (!modelId) return;
 
@@ -1694,6 +1700,8 @@ export class SteveChatApp {
         baseUrl: this.state.baseUrl,
         attempts: 2,
         phaseLabel: "Reasoning capability probe",
+        allowAutoRecover: false,
+        suppressStatus: true,
       });
 
       this.updateReasoningCapabilityFromResponse({
@@ -1890,11 +1898,14 @@ export class SteveChatApp {
       this.ensureModelProfilesPresent([{ id: profile.id, name: profile.name }]);
       this.syncModelLabel();
       this.renderModels();
-      this.queueReasoningCapabilityProbe({ force: true });
       this.state.localLlamaConnected = true;
       this.renderLocalLlamaButton();
 
-      await this.detectModels();
+      await this.detectModels({
+        allowAutoRecover: false,
+        warmupTimeoutMs: 28000,
+        requestTimeoutMs: 3200,
+      });
       this.setRuntimeState("ok", `Applied ${profile.name} on ${this.getBackendLabel()}.`);
       this.schedulePersist();
     } catch (err) {
@@ -1993,35 +2004,65 @@ export class SteveChatApp {
     return patched;
   }
 
-  async detectModels() {
+  async detectModels({ allowAutoRecover = true, warmupTimeoutMs = 7000, requestTimeoutMs = 1800 } = {}) {
     this.saveBaseUrl();
     this.setRuntimeState("working", `Detecting models on ${this.state.baseUrl} (waiting for runtime warmup if needed)...`);
-    try {
-      const listed = await this.runtimeClient.fetchModelsWithRetry(this.state.baseUrl, {
-        timeoutMs: 7000,
-        intervalMs: 700,
-        requestTimeoutMs: 1800,
-      });
 
+    const applyListedModels = (listed, { connectedLabel = null } = {}) => {
       this.ensureModelProfilesPresent(listed);
-
       this.renderModels();
       this.syncModelLabel();
-      this.queueReasoningCapabilityProbe();
 
       const localHit = this.state.baseUrl === this.getBackendEndpoint();
       this.state.localLlamaConnected = localHit;
-      this.setRuntimeState("ok", localHit ? `Connected ${this.getBackendLabel()}` : `Detected ${listed.length} model(s).`);
-      await this.notifyGpuFallbackIfNeeded();
+      this.renderLocalLlamaButton();
+
+      if (connectedLabel) {
+        this.setRuntimeState("ok", connectedLabel);
+      } else {
+        this.setRuntimeState("ok", localHit ? `Connected ${this.getBackendLabel()}` : `Detected ${listed.length} model(s).`);
+      }
+
+      this.queueReasoningCapabilityProbe();
+      this.notifyGpuFallbackIfNeeded();
       this.schedulePersist();
+    };
+
+    try {
+      const listed = await this.runtimeClient.fetchModelsWithRetry(this.state.baseUrl, {
+        timeoutMs: warmupTimeoutMs,
+        intervalMs: 700,
+        requestTimeoutMs,
+      });
+
+      applyListedModels(listed);
+      return;
     } catch (err) {
       this.state.localLlamaConnected = false;
       const msg = String(err?.message || "Unknown error");
       const localEndpoint = this.state.baseUrl === this.getBackendEndpoint();
       const transient = this.isTransientRuntimeError(msg);
 
-      // Auto-recovery: if selected local backend endpoint is down, try starting via supervisor API.
-      if (localEndpoint && transient) {
+      // If model is still loading, wait longer instead of restart loops.
+      if (localEndpoint && transient && this.isLoadingModelTransient(msg)) {
+        this.setRuntimeState("working", "Runtime is still loading model weights. Waiting for warmup...");
+        try {
+          const listed = await this.runtimeClient.fetchModelsWithRetry(this.state.baseUrl, {
+            timeoutMs: 28000,
+            intervalMs: 800,
+            requestTimeoutMs: 3200,
+          });
+          applyListedModels(listed, { connectedLabel: `Connected ${this.getBackendLabel()} (warmup complete).` });
+          return;
+        } catch (warmErr) {
+          const warmMsg = String(warmErr?.message || warmErr || "Unknown warmup error");
+          this.setRuntimeState("error", `Runtime warmup timed out: ${warmMsg}`);
+          return;
+        }
+      }
+
+      // Auto-recovery: only for true endpoint/network failures, not loading-model warmups.
+      if (localEndpoint && transient && allowAutoRecover && this.shouldAttemptRuntimeAutoRecover(msg)) {
         const profile = MODEL_PROFILES[this.state.modelProfile] || MODEL_PROFILES.e4b;
         const target = this.state.backend === "qvac" ? "qvac-vulkan" : "reg-prebuilt";
 
@@ -2045,15 +2086,7 @@ export class SteveChatApp {
             requestTimeoutMs: 3500,
           });
 
-          this.ensureModelProfilesPresent(listed);
-          this.renderModels();
-          this.syncModelLabel();
-          this.queueReasoningCapabilityProbe();
-          this.state.localLlamaConnected = true;
-          this.renderLocalLlamaButton();
-          this.setRuntimeState("ok", `Connected ${this.getBackendLabel()} (auto-started runtime).`);
-          await this.notifyGpuFallbackIfNeeded();
-          this.schedulePersist();
+          applyListedModels(listed, { connectedLabel: `Connected ${this.getBackendLabel()} (auto-started runtime).` });
           return;
         } catch (autoErr) {
           const autoMsg = String(autoErr?.message || autoErr || "Unknown auto-start error");
@@ -2076,6 +2109,17 @@ export class SteveChatApp {
   isTransientRuntimeError(message = "") {
     const msg = String(message || "");
     return /Runtime not ready|Failed to fetch|NetworkError|HTTP\s*503|Loading model|No models returned|Empty reply|ECONN|timeout|fetch/i.test(msg);
+  }
+
+  isLoadingModelTransient(message = "") {
+    const msg = String(message || "");
+    return /Loading model|Runtime not ready|No models returned/i.test(msg);
+  }
+
+  shouldAttemptRuntimeAutoRecover(message = "") {
+    const msg = String(message || "");
+    if (this.isLoadingModelTransient(msg)) return false;
+    return /Failed to fetch|NetworkError|ECONN|connection|timeout|fetch/i.test(msg);
   }
 
   applyRuntimeOutputDiagnostics(outputText = "") {
@@ -2142,6 +2186,8 @@ export class SteveChatApp {
     warmupTimeoutMs = 22000,
     warmupIntervalMs = 700,
     phaseLabel = "Runtime call",
+    allowAutoRecover = true,
+    suppressStatus = false,
   } = {}) {
     let lastErr = null;
     let attemptedAutoRecover = false;
@@ -2161,9 +2207,11 @@ export class SteveChatApp {
         const canRetry = transient && attempt < attempts;
         if (!canRetry) throw err;
 
-        this.setRuntimeState("working", `${phaseLabel} hit transient runtime issue (${msg}). Retrying...`);
+        if (!suppressStatus) {
+          this.setRuntimeState("working", `${phaseLabel} hit transient runtime issue (${msg}). Retrying...`);
+        }
 
-        if (!attemptedAutoRecover && baseUrl) {
+        if (!attemptedAutoRecover && baseUrl && allowAutoRecover && this.shouldAttemptRuntimeAutoRecover(msg)) {
           attemptedAutoRecover = true;
           await this.tryAutoRecoverLocalRuntime({ baseUrl, signal, reason: msg });
         }

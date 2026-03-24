@@ -8,11 +8,27 @@ A short window exists where:
 ## Why this happens
 Model-list endpoint and generation pipeline readiness are not perfectly simultaneous during warmup/restart.
 
+A second UI-layer race was also observed when pressing **Apply model**:
+- `applyModelProfile()` starts runtime switch,
+- `detectModels()` may still see transient `503 Loading model`,
+- reasoning capability probe could run during this same warmup window,
+- both paths previously attempted auto-recovery, causing status sequence noise:
+  1) "Runtime seems down... attempting auto-start"
+  2) "Runtime unreachable... attempting auto-start"
+  3) eventual connect.
+
 ## How Steve Chat now reasons about it
 In `src/steve-chat-app.js`:
 - `isTransientRuntimeError(...)` classifies warmup/network-ish failures.
-- `withRuntimeRetry(...)` performs one warmup-aware retry before surfacing failure.
-- `sendLive(...)` uses that wrapper for:
+- `isLoadingModelTransient(...)` isolates "model still loading" from true endpoint-down failures.
+- `shouldAttemptRuntimeAutoRecover(...)` only permits auto-start on real network/endpoint failures.
+- `detectModels(...)` now:
+  - waits longer on loading-model transients,
+  - avoids immediate restart loops during normal warmup,
+  - only auto-starts when recovery is actually appropriate.
+- `withRuntimeRetry(...)` now supports `allowAutoRecover` + `suppressStatus` so background probes do not trigger user-facing restart noise.
+- reasoning capability probe is timeout-bounded and does not run heavy recovery actions while runtime is still in working/warmup state.
+- `sendLive(...)` uses retry wrapper for:
   - streaming (`streamChat`)
   - fallback non-stream call (`completeOnce`)
   - regular non-stream call (`completeOnce`)
