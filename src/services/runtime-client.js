@@ -116,6 +116,7 @@ export class RuntimeClient {
     repeatPenalty,
     stream = false,
     customJson = "",
+    reasoningEnabled = true,
   }) {
     const body = {
       model,
@@ -139,6 +140,12 @@ export class RuntimeClient {
       }
     }
 
+    const kwargs = (body.chat_template_kwargs && typeof body.chat_template_kwargs === "object" && !Array.isArray(body.chat_template_kwargs))
+      ? { ...body.chat_template_kwargs }
+      : {};
+    kwargs.enable_thinking = Boolean(reasoningEnabled);
+    body.chat_template_kwargs = kwargs;
+
     return body;
   }
 
@@ -154,6 +161,7 @@ export class RuntimeClient {
     typicalP = 1,
     repeatPenalty = 1,
     customJson = "",
+    reasoningEnabled = true,
     signal = null,
   }) {
     const res = await fetch(`${baseUrl}/v1/chat/completions`, {
@@ -172,6 +180,7 @@ export class RuntimeClient {
         repeatPenalty,
         stream: false,
         customJson,
+        reasoningEnabled,
       })),
     });
 
@@ -179,16 +188,14 @@ export class RuntimeClient {
 
     const data = await res.json();
     const message = data?.choices?.[0]?.message || {};
-    const contentText = String(message?.content || "").trim();
-    const reasoningText = String(message?.reasoning_content ?? message?.thinking ?? "").trim();
-    const reply = reasoningText
-      ? `${reasoningText}${contentText ? `\n\n${contentText}` : ""}`
-      : (contentText || "(empty reply)");
+    const content = String(message?.content || "").trim();
+    const reasoning = String(message?.reasoning_content ?? message?.thinking ?? "").trim();
+    const reply = content || "(empty reply)";
     const tps = data?.timings?.predicted_per_second ?? data?.usage?.tokens_per_second ?? null;
     const promptTokens = data?.usage?.prompt_tokens ?? null;
     const completionTokens = data?.usage?.completion_tokens ?? null;
     const totalTokens = data?.usage?.total_tokens ?? null;
-    return { reply, tps, promptTokens, completionTokens, totalTokens, raw: data };
+    return { reply, content, reasoning, tps, promptTokens, completionTokens, totalTokens, raw: data };
   }
 
   async streamChat({
@@ -204,6 +211,7 @@ export class RuntimeClient {
     typicalP = 1,
     repeatPenalty = 1,
     customJson = "",
+    reasoningEnabled = true,
     signal = null,
   }) {
     const res = await fetch(`${baseUrl}/v1/chat/completions`, {
@@ -222,6 +230,7 @@ export class RuntimeClient {
         repeatPenalty,
         stream: true,
         customJson,
+        reasoningEnabled,
       })),
     });
 
@@ -283,16 +292,22 @@ export class RuntimeClient {
               continue;
             }
 
-            const token =
+            const contentToken =
               json?.choices?.[0]?.delta?.content ??
-              json?.choices?.[0]?.delta?.reasoning_content ??
-              json?.choices?.[0]?.delta?.thinking ??
               json?.choices?.[0]?.text ??
               "";
+            const reasoningToken =
+              json?.choices?.[0]?.delta?.reasoning_content ??
+              json?.choices?.[0]?.delta?.thinking ??
+              "";
 
-            if (token) {
+            if (contentToken || reasoningToken) {
               tokenEvents += 1;
-              onToken?.(token);
+              onToken?.({
+                content: contentToken,
+                reasoning: reasoningToken,
+                text: contentToken || reasoningToken,
+              });
             }
 
             const tps = json?.timings?.predicted_per_second ?? json?.usage?.tokens_per_second;

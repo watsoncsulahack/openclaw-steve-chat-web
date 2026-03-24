@@ -110,6 +110,7 @@ export class SteveChatApp {
       chatFilter: "",
       streamMode: localStorage.getItem("steve.streamMode") !== "0",
       ttsEnabled: localStorage.getItem("steve.ttsEnabled") === "1",
+      reasoningEnabled: localStorage.getItem("steve.reasoningEnabled") !== "0",
       settingsSection: "general",
       generation: {
         maxTokens: Number.isFinite(maxTokensRaw) ? Math.max(16, Math.min(4096, Math.round(maxTokensRaw))) : 300,
@@ -178,6 +179,7 @@ export class SteveChatApp {
     this.els.baseUrlInput.value = this.state.baseUrl;
     this.els.streamModeToggle.checked = Boolean(this.state.streamMode);
     this.els.ttsToggle.checked = Boolean(this.state.ttsEnabled);
+    if (this.els.reasoningToggle) this.els.reasoningToggle.checked = Boolean(this.state.reasoningEnabled);
     if (this.els.chatTemplateSelect) this.els.chatTemplateSelect.value = this.state.promptTemplate.key;
     if (this.els.customTemplateInput) this.els.customTemplateInput.value = this.state.promptTemplate.custom;
     if (this.els.maxTokensInput) this.els.maxTokensInput.value = String(this.state.generation.maxTokens);
@@ -246,6 +248,8 @@ export class SteveChatApp {
     if (!this.state.promptTemplate || typeof this.state.promptTemplate !== "object") {
       this.state.promptTemplate = { key: "none", custom: "" };
     }
+
+    this.state.reasoningEnabled = this.state.reasoningEnabled !== false;
 
     if (!["open", "preview", "closed"].includes(String(this.state.wideDrawerMode || ""))) {
       this.state.wideDrawerMode = this.state.sidebarCollapsed ? "preview" : "open";
@@ -532,6 +536,15 @@ export class SteveChatApp {
       localStorage.setItem("steve.ttsEnabled", this.state.ttsEnabled ? "1" : "0");
       this.setRuntimeState("idle", this.state.ttsEnabled ? "Text-to-speech enabled." : "Text-to-speech disabled.");
       this.schedulePersist();
+    });
+    this.els.reasoningToggle?.addEventListener("change", (e) => {
+      this.state.reasoningEnabled = Boolean(e.target.checked);
+      localStorage.setItem("steve.reasoningEnabled", this.state.reasoningEnabled ? "1" : "0");
+      this.setRuntimeState("idle", this.state.reasoningEnabled
+        ? "Reasoning enabled (runtime will emit reasoning when model supports it)."
+        : "Reasoning disabled.");
+      this.schedulePersist();
+      this.renderMessages();
     });
     this.els.settingsToggleThemeBtn?.addEventListener("click", () => this.toggleTheme());
     this.els.chatTemplateSelect?.addEventListener("change", () => this.renderChatDefaultsUi());
@@ -1242,6 +1255,111 @@ export class SteveChatApp {
     this.els.replyBannerText.textContent = `Replying to ${t.role}: ${snippet}`;
   }
 
+  escapeHtml(raw) {
+    return String(raw || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  formatInlineMarkdown(safeText) {
+    let out = String(safeText || "");
+    out = out.replace(/`([^`]+)`/g, "<code>$1</code>");
+    out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    out = out.replace(/__([^_]+)__/g, "<strong>$1</strong>");
+    out = out.replace(/(^|[\s(])\*([^*\n]+)\*(?=$|[\s.,!?;:)])/g, "$1<em>$2</em>");
+    out = out.replace(/(^|[\s(])_([^_\n]+)_(?=$|[\s.,!?;:)])/g, "$1<em>$2</em>");
+    out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    return out;
+  }
+
+  renderMarkdownHtml(text) {
+    const raw = String(text || "").replace(/\r\n?/g, "\n").trim();
+    if (!raw) return "";
+
+    const safe = this.escapeHtml(raw);
+    const codeBlocks = [];
+    let working = safe.replace(/```([a-zA-Z0-9_-]+)?\n([\s\S]*?)```/g, (_m, lang, code) => {
+      const idx = codeBlocks.length;
+      const cleanLang = String(lang || "").trim();
+      codeBlocks.push(`<pre class="md-code"><code${cleanLang ? ` data-lang="${cleanLang}"` : ""}>${code}</code></pre>`);
+      return `@@CODE_BLOCK_${idx}@@`;
+    });
+
+    const parseCells = (line) => line
+      .trim()
+      .replace(/^\|/, "")
+      .replace(/\|$/, "")
+      .split("|")
+      .map((c) => this.formatInlineMarkdown(c.trim()));
+
+    const blocks = working.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
+    const rendered = [];
+
+    for (const block of blocks) {
+      if (/^@@CODE_BLOCK_\d+@@$/.test(block)) {
+        rendered.push(block);
+        continue;
+      }
+
+      const lines = block.split("\n").map((l) => l.trimEnd());
+      const unordered = lines.every((l) => /^\s*[-*+]\s+/.test(l));
+      const ordered = lines.every((l) => /^\s*\d+\.\s+/.test(l));
+      const tableSep = lines.length >= 2 && /^\s*\|?[\s:-]+\|[\s|:-]*$/.test(lines[1]) && lines[0].includes("|");
+
+      if (tableSep) {
+        const head = parseCells(lines[0]);
+        const rows = lines.slice(2).filter((l) => l.includes("|")).map(parseCells);
+        const thead = `<thead><tr>${head.map((h) => `<th>${h}</th>`).join("")}</tr></thead>`;
+        const tbody = rows.length
+          ? `<tbody>${rows.map((r) => `<tr>${head.map((_, i) => `<td>${r[i] || ""}</td>`).join("")}</tr>`).join("")}</tbody>`
+          : "";
+        rendered.push(`<div class="md-table-wrap"><table>${thead}${tbody}</table></div>`);
+        continue;
+      }
+
+      if (unordered) {
+        const items = lines.map((l) => this.formatInlineMarkdown(l.replace(/^\s*[-*+]\s+/, "")));
+        rendered.push(`<ul>${items.map((it) => `<li>${it}</li>`).join("")}</ul>`);
+        continue;
+      }
+
+      if (ordered) {
+        const items = lines.map((l) => this.formatInlineMarkdown(l.replace(/^\s*\d+\.\s+/, "")));
+        rendered.push(`<ol>${items.map((it) => `<li>${it}</li>`).join("")}</ol>`);
+        continue;
+      }
+
+      if (lines.length === 1 && /^#{1,3}\s+/.test(lines[0])) {
+        const m = lines[0].match(/^(#{1,3})\s+(.*)$/);
+        const level = Math.min(3, m?.[1]?.length || 1);
+        rendered.push(`<h${level}>${this.formatInlineMarkdown(m?.[2] || "")}</h${level}>`);
+        continue;
+      }
+
+      rendered.push(`<p>${lines.map((l) => this.formatInlineMarkdown(l)).join("<br>")}</p>`);
+    }
+
+    let html = rendered.join("");
+    codeBlocks.forEach((codeHtml, idx) => {
+      html = html.split(`@@CODE_BLOCK_${idx}@@`).join(codeHtml);
+    });
+
+    return html;
+  }
+
+  composeAssistantParts({ content = "", reasoning = "" } = {}) {
+    const cleanContent = String(content || "").trim();
+    const cleanReasoning = this.state.reasoningEnabled ? String(reasoning || "").trim() : "";
+
+    return {
+      text: cleanContent || "(empty reply)",
+      reasoningText: cleanReasoning,
+    };
+  }
+
   renderMessages() {
     const messages = this.state.messages[this.state.activeChatId] || [];
     this.els.messages.innerHTML = "";
@@ -1278,8 +1396,26 @@ export class SteveChatApp {
         bubble.appendChild(modelMeta);
       }
 
+      if (msg.role === "steve" && this.state.reasoningEnabled && msg.reasoningText) {
+        const reasoningWrap = document.createElement("details");
+        reasoningWrap.className = "reasoning-block";
+        reasoningWrap.open = true;
+
+        const summary = document.createElement("summary");
+        summary.textContent = "Reasoning";
+        reasoningWrap.appendChild(summary);
+
+        const reasoningBody = document.createElement("div");
+        reasoningBody.className = "reasoning-body msg-body";
+        reasoningBody.innerHTML = this.renderMarkdownHtml(msg.reasoningText);
+        reasoningWrap.appendChild(reasoningBody);
+
+        bubble.appendChild(reasoningWrap);
+      }
+
       const body = document.createElement("div");
-      body.textContent = msg.text;
+      body.className = "msg-body";
+      body.innerHTML = this.renderMarkdownHtml(msg.text);
       bubble.appendChild(body);
 
       if (msg.role === "steve" && (msg.tps != null || msg.energyMw != null)) {
@@ -1372,6 +1508,7 @@ export class SteveChatApp {
     this.els.runtimeModeBtn?.classList.toggle("active", this.state.liveMode);
     if (this.els.streamModeToggle) this.els.streamModeToggle.checked = Boolean(this.state.streamMode);
     if (this.els.ttsToggle) this.els.ttsToggle.checked = Boolean(this.state.ttsEnabled);
+    if (this.els.reasoningToggle) this.els.reasoningToggle.checked = Boolean(this.state.reasoningEnabled);
 
     const chatDefaults = `Temp ${this.state.generation.temperature} • top-k ${this.state.generation.topK} • top-p ${this.state.generation.topP} • min-p ${this.state.generation.minP} • max ${this.state.generation.maxTokens}`;
     this.els.modeHint.textContent = `Local Runtime (${this.getBackendLabel()}) uses chat history with /v1/chat/completions. ${chatDefaults}.`;
@@ -2151,6 +2288,7 @@ export class SteveChatApp {
     const controller = this.startInferenceController();
     const signal = controller.signal;
     let streamedText = "";
+    let streamedReasoning = "";
 
     try {
       let readyModels = [];
@@ -2213,17 +2351,36 @@ export class SteveChatApp {
           repeatPenalty: this.state.generation.repeatPenalty,
           customJson: this.state.generation.customRuntimeJson,
           signal,
-          onToken: (token) => {
-            streamedText += token;
+          reasoningEnabled: this.state.reasoningEnabled,
+          onToken: (chunk) => {
+            const contentChunk = typeof chunk === "string"
+              ? chunk
+              : String(chunk?.content || chunk?.text || "");
+            const reasoningChunk = typeof chunk === "string"
+              ? ""
+              : String(chunk?.reasoning || "");
+
+            if (contentChunk) streamedText += contentChunk;
+            if (reasoningChunk) streamedReasoning += reasoningChunk;
+
             chunkCount += 1;
-            completionPreviewTokens = Math.max(1, this.estimateTokenCount(streamedText));
+            const combinedOutput = this.state.reasoningEnabled
+              ? `${streamedReasoning}\n${streamedText}`.trim()
+              : streamedText;
+            completionPreviewTokens = Math.max(1, this.estimateTokenCount(combinedOutput));
             const elapsedSec = Math.max(0.2, (performance.now() - startedAt) / 1000);
             liveTps = completionPreviewTokens / elapsedSec;
             livePowerMw = this.estimateAutoPowerMw({ text, tps: liveTps, live: true });
             this.recordPowerSample(livePowerMw);
 
+            const display = this.composeAssistantParts({
+              content: streamedText,
+              reasoning: streamedReasoning,
+            });
+
             this.patchMessage(chatId, assistantIndex, {
-              text: streamedText,
+              text: display.text,
+              reasoningText: display.reasoningText,
               pending: true,
               error: false,
               tps: liveTps,
@@ -2259,6 +2416,7 @@ export class SteveChatApp {
             typicalP: this.state.generation.typicalP,
             repeatPenalty: this.state.generation.repeatPenalty,
             customJson: this.state.generation.customRuntimeJson,
+            reasoningEnabled: this.state.reasoningEnabled,
             signal,
           }), {
             signal,
@@ -2267,7 +2425,8 @@ export class SteveChatApp {
             phaseLabel: "Fallback completion",
           });
 
-          streamedText = String(retry?.reply || "").trim();
+          streamedText = String(retry?.content || retry?.reply || "").trim();
+          streamedReasoning = String(retry?.reasoning || "").trim();
           if (!streamedText || streamedText === "(empty reply)") {
             streamedText = "(empty reply)";
           }
@@ -2283,8 +2442,13 @@ export class SteveChatApp {
         }
 
         const elapsedMs = Math.max(1, performance.now() - startedAt);
+        const display = this.composeAssistantParts({
+          content: streamedText,
+          reasoning: streamedReasoning,
+        });
+
         const promptTokens = result?.promptTokens ?? this.estimateTokenCount(text);
-        const completionTokens = result?.completionTokens ?? Math.max(1, this.estimateTokenCount(streamedText));
+        const completionTokens = result?.completionTokens ?? Math.max(1, this.estimateTokenCount(`${display.reasoningText}\n${display.text}`));
         const totalTokens = result?.totalTokens ?? (promptTokens + completionTokens);
         const finalTps = completionTokens / Math.max(0.2, elapsedMs / 1000);
         const finalPowerMw = this.estimateAutoPowerMw({ text, tps: finalTps, live: true });
@@ -2292,7 +2456,8 @@ export class SteveChatApp {
         this.addTokenUsage({ promptTokens, completionTokens, totalTokens });
 
         this.patchMessage(chatId, assistantIndex, {
-          text: streamedText,
+          text: display.text,
+          reasoningText: display.reasoningText,
           pending: false,
           error: false,
           tps: finalTps ?? null,
@@ -2302,7 +2467,7 @@ export class SteveChatApp {
 
         this.renderPowerUi();
         this.renderTokenUi();
-        this.speakText(streamedText);
+        this.speakText(display.text);
         this.setRuntimeState("ok", `Live stream complete. Session energy ${this.formatEnergyMWh(this.state.power.sessionEnergyMWh)}.`);
         return;
       }
@@ -2320,6 +2485,7 @@ export class SteveChatApp {
         typicalP: this.state.generation.typicalP,
         repeatPenalty: this.state.generation.repeatPenalty,
         customJson: this.state.generation.customRuntimeJson,
+        reasoningEnabled: this.state.reasoningEnabled,
         signal,
       }), {
         signal,
@@ -2329,9 +2495,13 @@ export class SteveChatApp {
       });
 
       const elapsedMs = Math.max(1, performance.now() - startedAt);
+      const display = this.composeAssistantParts({
+        content: oneShot.content || oneShot.reply,
+        reasoning: oneShot.reasoning,
+      });
 
       const promptTokens = oneShot.promptTokens ?? this.estimateTokenCount(text);
-      const completionTokens = oneShot.completionTokens ?? this.estimateTokenCount(oneShot.reply);
+      const completionTokens = oneShot.completionTokens ?? this.estimateTokenCount(`${display.reasoningText}\n${display.text}`);
       const totalTokens = oneShot.totalTokens ?? (promptTokens + completionTokens);
       const effectiveTps = completionTokens / Math.max(0.2, elapsedMs / 1000);
       const powerMw = this.estimateAutoPowerMw({ text, tps: effectiveTps, live: true });
@@ -2340,7 +2510,8 @@ export class SteveChatApp {
       this.addTokenUsage({ promptTokens, completionTokens, totalTokens });
 
       this.patchMessage(chatId, assistantIndex, {
-        text: oneShot.reply,
+        text: display.text,
+        reasoningText: display.reasoningText,
         pending: false,
         error: false,
         tps: effectiveTps,
@@ -2349,14 +2520,19 @@ export class SteveChatApp {
       });
       this.renderPowerUi();
       this.renderTokenUi();
-      this.speakText(oneShot.reply);
+      this.speakText(display.text);
       this.setRuntimeState("ok", `Live response complete. Session energy ${this.formatEnergyMWh(this.state.power.sessionEnergyMWh)}.`);
     } catch (err) {
       const aborted = err?.name === "AbortError" || /aborted|abort/i.test(String(err?.message || ""));
       if (aborted) {
         const stoppedText = streamedText.trim() || "(generation stopped)";
+        const stopped = this.composeAssistantParts({
+          content: stoppedText,
+          reasoning: streamedReasoning,
+        });
         this.patchMessage(chatId, assistantIndex, {
-          text: stoppedText,
+          text: stopped.text,
+          reasoningText: stopped.reasoningText,
           pending: false,
           error: false,
         });

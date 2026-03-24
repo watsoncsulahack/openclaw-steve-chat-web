@@ -227,6 +227,100 @@ body.theme-light {
   color: var(--text-strong);
 }
 
+.msg-body {
+  white-space: normal;
+}
+
+.msg-body p,
+.msg-body ul,
+.msg-body ol,
+.msg-body h1,
+.msg-body h2,
+.msg-body h3,
+.msg-body pre,
+.msg-body .md-table-wrap {
+  margin: 0 0 8px;
+}
+
+.msg-body p:last-child,
+.msg-body ul:last-child,
+.msg-body ol:last-child,
+.msg-body h1:last-child,
+.msg-body h2:last-child,
+.msg-body h3:last-child,
+.msg-body pre:last-child,
+.msg-body .md-table-wrap:last-child {
+  margin-bottom: 0;
+}
+
+.msg-body ul,
+.msg-body ol {
+  padding-left: 20px;
+}
+
+.msg-body code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92em;
+  background: rgba(20, 30, 60, 0.5);
+  border: 1px solid rgba(120, 140, 210, 0.25);
+  border-radius: 6px;
+  padding: 0 5px;
+}
+
+.msg-body .md-code {
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(8, 14, 34, 0.92);
+  padding: 8px;
+}
+
+.msg-body .md-code code {
+  display: block;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  white-space: pre;
+}
+
+.msg-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.msg-body th,
+.msg-body td {
+  border: 1px solid var(--line);
+  padding: 6px 7px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.msg-body a {
+  color: #a9c1ff;
+}
+
+.reasoning-block {
+  border: 1px dashed rgba(132, 159, 238, 0.65);
+  border-radius: 10px;
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  background: rgba(12, 22, 52, 0.38);
+}
+
+.reasoning-block > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: #bfd2ff;
+  font-weight: 600;
+  user-select: none;
+}
+
+.reasoning-body {
+  margin-top: 6px;
+}
+
 .bubble.pending {
   opacity: 0.9;
 }
@@ -730,6 +824,15 @@ body.theme-light .swipe-cue-left {
 body.theme-light .swipe-cue-right {
   background: linear-gradient(90deg, rgba(49, 131, 93, .34), rgba(255,255,255,0));
   color: #1f6c4a;
+}
+
+body.theme-light .reasoning-block {
+  background: rgba(214, 228, 255, 0.75);
+  border-color: rgba(95, 126, 210, 0.75);
+}
+
+body.theme-light .reasoning-block > summary {
+  color: #2f4f9a;
 }
 
 .composer-mic {

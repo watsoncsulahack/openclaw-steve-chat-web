@@ -38,6 +38,7 @@ export function getDomRefs() {
     runtimeModeBtn: $("runtimeModeBtn"),
     streamModeToggle: $("streamModeToggle"),
     ttsToggle: $("ttsToggle"),
+    reasoningToggle: $("reasoningToggle"),
     statusDot: document.querySelector(".status-dot"),
     themeToggleBtn: $("themeToggleBtn"),
     micBtn: $("micBtn"),
