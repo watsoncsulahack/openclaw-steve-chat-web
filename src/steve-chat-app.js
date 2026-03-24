@@ -1446,11 +1446,11 @@ export class SteveChatApp {
         GestureService.bindSwipeAction(row, {
           onRight: () => this.setReplyTarget(messageIndex, msg),
           onLeft: () => this.setReplyTarget(messageIndex, msg),
-          threshold: 68,
+          threshold: 44,
           previewClassRight: "swipe-preview-right",
           previewClassLeft: "swipe-preview-left",
           transformEl: bubble,
-          maxTranslate: 76,
+          maxTranslate: 88,
         });
       }
 

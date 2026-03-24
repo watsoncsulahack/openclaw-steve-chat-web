@@ -3,20 +3,22 @@ export class GestureService {
     onLeft,
     onRight,
     onTap,
-    threshold = 72,
+    threshold = 56,
     previewClassRight,
     previewClassLeft,
     transformEl = null,
     maxTranslate = 108,
   }) {
+    const moveTarget = transformEl || el;
+
     let sx = 0;
     let sy = 0;
     let dx = 0;
     let dy = 0;
     let active = false;
-    let dragAxis = "none";
-
-    const moveTarget = transformEl || el;
+    let axis = "none";
+    let pointerId = null;
+    let captured = false;
 
     const resetVisual = () => {
       moveTarget.style.transition = "transform 140ms ease, opacity 140ms ease";
@@ -26,9 +28,11 @@ export class GestureService {
       if (previewClassLeft) el.classList.remove(previewClassLeft);
     };
 
-    const startPoint = (x, y) => {
+    const start = (x, y, pid = null) => {
       active = true;
-      dragAxis = "none";
+      axis = "none";
+      pointerId = pid;
+      captured = false;
       sx = x;
       sy = y;
       dx = 0;
@@ -36,46 +40,71 @@ export class GestureService {
       moveTarget.style.transition = "none";
     };
 
-    const movePoint = (x, y) => {
+    const move = (x, y, evt = null, pid = null) => {
       if (!active) return;
+      if (pointerId != null && pid != null && pid !== pointerId) return;
+
       dx = x - sx;
       dy = y - sy;
 
-      if (dragAxis === "none") {
-        if (Math.abs(dx) < 14 && Math.abs(dy) < 14) return;
-        if (Math.abs(dx) > Math.abs(dy) * 1.2) {
-          dragAxis = "x";
+      if (axis === "none") {
+        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+
+        // Bias slightly toward horizontal so swipe-reply is easier on phones.
+        if (Math.abs(dx) >= Math.abs(dy) * 0.85) {
+          axis = "x";
         } else {
-          dragAxis = "y";
+          axis = "y";
           active = false;
           resetVisual();
           return;
         }
       }
 
-      if (dragAxis !== "x") return;
+      if (axis !== "x") return;
+
+      if (!captured && pointerId != null && el.setPointerCapture) {
+        try {
+          el.setPointerCapture(pointerId);
+          captured = true;
+        } catch {
+          // ignore
+        }
+      }
+
+      if (evt?.cancelable) evt.preventDefault();
 
       const clamped = Math.max(-maxTranslate, Math.min(maxTranslate, dx));
       moveTarget.style.transform = `translateX(${clamped}px)`;
       moveTarget.style.opacity = "0.94";
 
       if (previewClassRight || previewClassLeft) {
-        const dir = clamped > 26 ? "right" : clamped < -26 ? "left" : "none";
+        const dir = clamped > 18 ? "right" : clamped < -18 ? "left" : "none";
         if (previewClassRight) el.classList.toggle(previewClassRight, dir === "right");
         if (previewClassLeft) el.classList.toggle(previewClassLeft, dir === "left");
       }
     };
 
     const finish = (shouldTrigger) => {
-      if (!active && dragAxis === "none") return;
+      if (!active && axis === "none") return;
 
       const finalDx = dx;
       const finalDy = dy;
-      const horizontalDrag = dragAxis === "x";
-      const wasTap = dragAxis === "none" && Math.abs(finalDx) < 10 && Math.abs(finalDy) < 10;
+      const horizontalDrag = axis === "x";
+      const wasTap = axis === "none" && Math.abs(finalDx) < 10 && Math.abs(finalDy) < 10;
+
+      if (captured && pointerId != null && el.releasePointerCapture) {
+        try {
+          el.releasePointerCapture(pointerId);
+        } catch {
+          // ignore
+        }
+      }
 
       active = false;
-      dragAxis = "none";
+      axis = "none";
+      pointerId = null;
+      captured = false;
       sx = 0;
       sy = 0;
       dx = 0;
@@ -99,31 +128,36 @@ export class GestureService {
 
     const onPointerDown = (e) => {
       if (e.pointerType === "mouse" && e.button !== 0) return;
-      startPoint(e.clientX, e.clientY);
+      start(e.clientX, e.clientY, e.pointerId);
     };
 
-    const onPointerMove = (e) => movePoint(e.clientX, e.clientY);
+    const onPointerMove = (e) => move(e.clientX, e.clientY, e, e.pointerId);
 
+    // Pointer events cover modern Android/iOS + desktop.
+    if (window.PointerEvent) {
+      el.addEventListener("pointerdown", onPointerDown, { passive: true });
+      el.addEventListener("pointermove", onPointerMove, { passive: false });
+      el.addEventListener("pointerup", () => finish(true), { passive: true });
+      el.addEventListener("pointercancel", () => finish(false), { passive: true });
+      el.addEventListener("lostpointercapture", () => finish(false), { passive: true });
+      return;
+    }
+
+    // Fallback for old engines.
     const onTouchStart = (e) => {
       const t = e.changedTouches?.[0];
       if (!t) return;
-      startPoint(t.clientX, t.clientY);
+      start(t.clientX, t.clientY, null);
     };
 
     const onTouchMove = (e) => {
       const t = e.changedTouches?.[0];
       if (!t) return;
-      movePoint(t.clientX, t.clientY);
+      move(t.clientX, t.clientY, e, null);
     };
 
-    el.addEventListener("pointerdown", onPointerDown, { passive: true });
-    el.addEventListener("pointermove", onPointerMove, { passive: true });
-    el.addEventListener("pointerup", () => finish(true), { passive: true });
-    el.addEventListener("pointercancel", () => finish(false), { passive: true });
-    el.addEventListener("lostpointercapture", () => finish(false), { passive: true });
-
     el.addEventListener("touchstart", onTouchStart, { passive: true });
-    el.addEventListener("touchmove", onTouchMove, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
     el.addEventListener("touchend", () => finish(true), { passive: true });
     el.addEventListener("touchcancel", () => finish(false), { passive: true });
   }

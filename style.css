@@ -162,6 +162,7 @@ body.theme-light {
 .messages {
   padding: 12px;
   overflow: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -175,6 +176,7 @@ body.theme-light {
   align-items: flex-end;
   gap: 8px;
   max-width: 90%;
+  width: fit-content;
   touch-action: pan-y;
   transition: transform 120ms ease;
 }
@@ -225,10 +227,15 @@ body.theme-light {
   font-size: 15px;
   white-space: pre-wrap;
   color: var(--text-strong);
+  max-width: min(82vw, 100%);
+  overflow: hidden;
 }
 
 .msg-body {
   white-space: normal;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .msg-body p,
@@ -281,6 +288,11 @@ body.theme-light {
   background: transparent;
   padding: 0;
   white-space: pre;
+}
+
+.msg-body .md-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .msg-body table {
