@@ -178,7 +178,12 @@ export class RuntimeClient {
     if (!res.ok) throw await this.httpError(res);
 
     const data = await res.json();
-    const reply = data?.choices?.[0]?.message?.content?.trim() || "(empty reply)";
+    const message = data?.choices?.[0]?.message || {};
+    const contentText = String(message?.content || "").trim();
+    const reasoningText = String(message?.reasoning_content ?? message?.thinking ?? "").trim();
+    const reply = reasoningText
+      ? `${reasoningText}${contentText ? `\n\n${contentText}` : ""}`
+      : (contentText || "(empty reply)");
     const tps = data?.timings?.predicted_per_second ?? data?.usage?.tokens_per_second ?? null;
     const promptTokens = data?.usage?.prompt_tokens ?? null;
     const completionTokens = data?.usage?.completion_tokens ?? null;
@@ -280,6 +285,8 @@ export class RuntimeClient {
 
             const token =
               json?.choices?.[0]?.delta?.content ??
+              json?.choices?.[0]?.delta?.reasoning_content ??
+              json?.choices?.[0]?.delta?.thinking ??
               json?.choices?.[0]?.text ??
               "";
 

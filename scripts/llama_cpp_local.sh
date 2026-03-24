@@ -119,6 +119,8 @@ MODEL_FILE="$RUN_DIR/${BACKEND_LABEL}-model-$PORT.path"
 MODE_FILE="$RUN_DIR/${BACKEND_LABEL}-mode-$PORT.txt"
 NGL_FILE="$RUN_DIR/${BACKEND_LABEL}-ngl-$PORT.txt"
 BIN_FILE="$RUN_DIR/${BACKEND_LABEL}-bin-$PORT.path"
+REASONING_FILE="$RUN_DIR/${BACKEND_LABEL}-reasoning-format-$PORT.txt"
+REASONING_BUDGET_FILE="$RUN_DIR/${BACKEND_LABEL}-reasoning-budget-$PORT.txt"
 LEGACY_PID_FILE=""
 LEGACY_MODEL_FILE=""
 
@@ -149,6 +151,7 @@ Env overrides:
   LLAMA_CPP_BIN, LLAMA_CPP_PORT, LLAMA_CPP_N_GPU_LAYERS
   QVAC_LLAMA_BIN, QVAC_LLAMA_PORT, QVAC_N_GPU_LAYERS
   LLAMA_CPP_HOST, LLAMA_CPP_CTX, LLAMA_CPP_THREADS
+  LLAMA_REASONING_ENABLE (default 1), LLAMA_REASONING_FORMAT (default deepseek-legacy), LLAMA_REASONING_BUDGET (default -1)
 
 Examples:
   $(basename "$0") list-models
@@ -270,7 +273,7 @@ is_running() {
 
 status() {
   local pid model source="pid-file"
-  local run_mode run_ngl run_bin
+  local run_mode run_ngl run_bin run_reasoning run_reasoning_budget
 
   if [[ -f "$PID_FILE" ]]; then
     pid="$(cat "$PID_FILE" || true)"
@@ -301,9 +304,13 @@ status() {
     run_mode="$(cat "$MODE_FILE" 2>/dev/null || true)"
     run_ngl="$(cat "$NGL_FILE" 2>/dev/null || true)"
     run_bin="$(cat "$BIN_FILE" 2>/dev/null || true)"
+    run_reasoning="$(cat "$REASONING_FILE" 2>/dev/null || true)"
+    run_reasoning_budget="$(cat "$REASONING_BUDGET_FILE" 2>/dev/null || true)"
 
     echo "  mode:    ${run_mode:-$MODE}"
     echo "  ngl:     ${run_ngl:-$N_GPU_LAYERS}"
+    [[ -n "$run_reasoning" ]] && echo "  reasoning_format: ${run_reasoning}"
+    [[ -n "$run_reasoning_budget" ]] && echo "  reasoning_budget: ${run_reasoning_budget}"
     [[ -n "$run_bin" ]] && echo "  bin:     $run_bin"
     [[ -n "$model" ]] && echo "  model:   $model"
     echo "  log:     $LOG_FILE"
@@ -344,6 +351,32 @@ start() {
   if [[ -n "$LEGACY_MODEL_FILE" ]]; then
     echo "$model_path" > "$LEGACY_MODEL_FILE"
   fi
+
+  local reasoning_enable reasoning_format reasoning_budget bin_help
+  local -a reasoning_args=()
+  reasoning_enable="${LLAMA_REASONING_ENABLE:-1}"
+  reasoning_format="${LLAMA_REASONING_FORMAT:-deepseek-legacy}"
+  reasoning_budget="${LLAMA_REASONING_BUDGET:--1}"
+  echo "disabled" > "$REASONING_FILE"
+  echo "" > "$REASONING_BUDGET_FILE"
+
+  if [[ "$reasoning_enable" != "0" ]]; then
+    bin_help="$($BIN --help 2>/dev/null || true)"
+
+    if grep -q -- "--reasoning-format" <<<"$bin_help"; then
+      reasoning_args+=(--reasoning-format "$reasoning_format")
+      echo "$reasoning_format" > "$REASONING_FILE"
+    else
+      echo "unsupported" > "$REASONING_FILE"
+      echo "[llama-cpp] NOTE: this server build does not expose --reasoning-format; continuing without explicit reasoning flag."
+    fi
+
+    if grep -q -- "--reasoning-budget" <<<"$bin_help"; then
+      reasoning_args+=(--reasoning-budget "$reasoning_budget")
+      echo "$reasoning_budget" > "$REASONING_BUDGET_FILE"
+    fi
+  fi
+
   echo "[llama-cpp] starting server"
   echo "  backend: $BACKEND_LABEL"
   echo "  bin:     $BIN"
@@ -351,6 +384,8 @@ start() {
   echo "  port:    $PORT"
   echo "  mode:    $MODE"
   echo "  ngl:     $N_GPU_LAYERS"
+  [[ -s "$REASONING_FILE" ]] && echo "  reasoning_format: $(cat "$REASONING_FILE")"
+  [[ -s "$REASONING_BUDGET_FILE" ]] && echo "  reasoning_budget: $(cat "$REASONING_BUDGET_FILE")"
   echo "  model:   $model_path"
 
   local bin_dir ld_library_path unresolved
@@ -383,6 +418,7 @@ start() {
     --threads "$THREADS" \
     --n-gpu-layers "$N_GPU_LAYERS" \
     "${DEVICE_ARGS[@]}" \
+    "${reasoning_args[@]}" \
     --jinja \
     > "$LOG_FILE" 2>&1 &
 
@@ -410,7 +446,7 @@ start() {
 stop() {
   if ! is_running; then
     echo "[llama-cpp] already stopped ($BACKEND_LABEL)"
-    rm -f "$PID_FILE" "$MODE_FILE" "$NGL_FILE" "$BIN_FILE"
+    rm -f "$PID_FILE" "$MODE_FILE" "$NGL_FILE" "$BIN_FILE" "$REASONING_FILE" "$REASONING_BUDGET_FILE"
     if [[ -n "$LEGACY_PID_FILE" ]]; then
       rm -f "$LEGACY_PID_FILE"
     fi
@@ -425,7 +461,7 @@ stop() {
 
   if [[ -z "$pid" ]]; then
     echo "[llama-cpp] could not resolve pid for backend=$BACKEND_LABEL (port $PORT)"
-    rm -f "$PID_FILE" "$MODE_FILE" "$NGL_FILE" "$BIN_FILE"
+    rm -f "$PID_FILE" "$MODE_FILE" "$NGL_FILE" "$BIN_FILE" "$REASONING_FILE" "$REASONING_BUDGET_FILE"
     return 1
   fi
 
@@ -444,7 +480,7 @@ stop() {
     kill -9 "$pid" 2>/dev/null || true
   fi
 
-  rm -f "$PID_FILE" "$MODE_FILE" "$NGL_FILE" "$BIN_FILE"
+  rm -f "$PID_FILE" "$MODE_FILE" "$NGL_FILE" "$BIN_FILE" "$REASONING_FILE" "$REASONING_BUDGET_FILE"
   if [[ -n "$LEGACY_PID_FILE" ]]; then
     rm -f "$LEGACY_PID_FILE"
   fi
