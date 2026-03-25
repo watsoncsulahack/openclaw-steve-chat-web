@@ -363,14 +363,16 @@ export class RuntimeClient {
         signal: controller.signal,
       });
     } catch (err) {
-      if (err?.name === "AbortError") {
-        // Fallback: the supervisor request may time out while the runtime actually
-        // continues starting in background. Probe expected endpoint before failing.
-        const guessedPort = String(target || "").startsWith("reg") ? 18080 : 18084;
-        const guessedEndpoint = `http://127.0.0.1:${guessedPort}`;
+      const guessedPort = String(target || "").startsWith("reg") ? 18080 : 18084;
+      const guessedEndpoint = `http://127.0.0.1:${guessedPort}`;
+      const fetchLike = /Failed to fetch|NetworkError|fetch|ECONN|connection/i.test(String(err?.message || ""));
+      const shouldProbeFallback = err?.name === "AbortError" || fetchLike;
+
+      if (shouldProbeFallback) {
+        // Fallback: supervisor request may timeout/fail while runtime still starts in background.
         try {
           await this.fetchModelsWithRetry(guessedEndpoint, {
-            timeoutMs: 12000,
+            timeoutMs: 18000,
             intervalMs: 700,
             requestTimeoutMs: 2500,
           });
@@ -380,12 +382,17 @@ export class RuntimeClient {
             modelIndex,
             endpoint: guessedEndpoint,
             port: guessedPort,
-            recoveredAfterTimeout: true,
+            recoveredAfterTimeout: err?.name === "AbortError",
+            recoveredAfterFetchError: fetchLike,
           };
         } catch {
-          throw new Error(`Runtime switch timed out after ${timeout}ms`);
+          if (err?.name === "AbortError") {
+            throw new Error(`Runtime switch timed out after ${timeout}ms`);
+          }
+          throw err;
         }
       }
+
       throw err;
     } finally {
       clearTimeout(timer);

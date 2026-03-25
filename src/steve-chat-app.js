@@ -220,6 +220,7 @@ export class SteveChatApp {
     this.bindViewportFixes();
     this.syncViewport();
     this.renderAll();
+    this.autoSizeComposerInput();
     this.queueReasoningCapabilityProbe();
   }
 
@@ -510,6 +511,14 @@ export class SteveChatApp {
     this.activeInferenceController?.abort?.();
   }
 
+  autoSizeComposerInput() {
+    const el = this.els.messageInput;
+    if (!el) return;
+    el.style.height = "auto";
+    const target = Math.max(42, Math.min(150, Number(el.scrollHeight || 42)));
+    el.style.height = `${target}px`;
+  }
+
   bindEvents() {
     this.els.menuBtn.addEventListener("click", () => {
       if (this.isWide()) {
@@ -587,7 +596,17 @@ export class SteveChatApp {
       this.onSend();
     });
     this.els.messageInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") this.onSend();
+      if (e.key !== "Enter") return;
+      // ChatGPT-like multiline composer: Enter inserts newline.
+      // Use Ctrl/Cmd+Enter to send quickly.
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        this.onSend();
+      }
+    });
+
+    this.els.messageInput.addEventListener("input", () => {
+      this.autoSizeComposerInput();
     });
 
     this.els.plusBtn.addEventListener("click", () => {
@@ -1453,7 +1472,7 @@ export class SteveChatApp {
       body.innerHTML = this.renderMarkdownHtml(msg.text);
       bubble.appendChild(body);
 
-      if (msg.role === "steve" && (msg.tps != null || msg.energyMw != null)) {
+      if (msg.role === "steve" && (msg.tps != null || msg.energyMWh != null)) {
         const meta = document.createElement("div");
         meta.className = "msg-tps";
 
@@ -1462,9 +1481,6 @@ export class SteveChatApp {
           const n = Number(msg.tps);
           const fixed = Number.isFinite(n) ? (n >= 10 ? n.toFixed(0) : n.toFixed(1)) : "--";
           bits.push(`${fixed} tokens/s`);
-        }
-        if (msg.energyMw != null) {
-          bits.push(this.formatPower(msg.energyMw));
         }
         if (msg.energyMWh != null) {
           bits.push(this.formatEnergyMWh(msg.energyMWh));
@@ -2319,8 +2335,7 @@ export class SteveChatApp {
     const totalMWh = Number(this.state.power?.sessionEnergyMWh || 0);
     this.els.powerTotalValue.textContent = this.formatEnergyMWh(totalMWh);
 
-    const avgMw = this.getAveragePowerMw();
-    this.els.powerAvgValue.textContent = avgMw == null ? "--" : this.formatPower(avgMw);
+    this.els.powerAvgValue.textContent = "--";
 
     const poly = this.els.powerTrendSvg.querySelector("polyline");
     const samples = (this.state.power?.samples || []).slice(-40);
@@ -2538,6 +2553,7 @@ export class SteveChatApp {
     if (!text) return;
 
     this.els.messageInput.value = "";
+    this.autoSizeComposerInput();
 
     const chatId = this.state.activeChatId;
     const replyTo = this.state.replyTarget?.chatId === chatId
