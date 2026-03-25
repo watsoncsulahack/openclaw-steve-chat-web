@@ -125,6 +125,9 @@ export class RuntimeClient {
       temperature,
       top_p: topP,
       stream,
+      // Stability-first default on mobile: avoid stale prefix cache interactions
+      // across rapid model switches and aborted runs.
+      cache_prompt: false,
     };
 
     if (topK != null) body.top_k = topK;

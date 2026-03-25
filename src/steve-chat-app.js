@@ -2466,22 +2466,70 @@ export class SteveChatApp {
     return false;
   }
 
+  sanitizeAssistantForRuntime(text = "") {
+    const cleaned = this.sanitizeModelTemplateSlop(text);
+    if (!cleaned) return "";
+
+    const lines = cleaned
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .filter((line) => !/^\(generation stopped\)$/i.test(line))
+      .filter((line) => !/^live call failed:/i.test(line));
+
+    const deduped = [];
+    for (const line of lines) {
+      const prev = deduped[deduped.length - 1];
+      if (prev && prev.toLowerCase() === line.toLowerCase()) continue;
+      deduped.push(line);
+    }
+
+    const pruned = deduped.filter((line) => {
+      if (line.length > 14) return true;
+      return !this.isLowSignalAssistantMessage(line);
+    });
+
+    return pruned.join("\n").trim();
+  }
+
+  isLikelyCorruptedAssistantOutput(text = "") {
+    const raw = String(text || "");
+    if (!raw.trim()) return true;
+    if (/\(generation stopped\)/i.test(raw)) return true;
+    if (/<\|im_start\|>|<\|im_end\|>|<im_start>|<im_end>|<start_of_turn>|<end_of_turn>/i.test(raw)) return true;
+
+    const cleaned = this.sanitizeAssistantForRuntime(raw);
+    if (!cleaned) return true;
+
+    const lines = cleaned.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+    if (lines.length >= 4) {
+      const shortOrLowSignal = lines.filter((line) => line.length <= 12 || this.isLowSignalAssistantMessage(line)).length;
+      const unique = new Set(lines.map((line) => line.toLowerCase())).size;
+      if (shortOrLowSignal >= Math.ceil(lines.length * 0.6)) return true;
+      if (unique <= 2) return true;
+    }
+
+    if (cleaned.length <= 12 && this.isLowSignalAssistantMessage(cleaned)) return true;
+    return false;
+  }
+
   buildRuntimeMessages(chatId = this.state.activeChatId) {
     const raw = this.state.messages[chatId] || [];
     const mapped = raw
       .filter((m) => m.role === "user" || m.role === "steve")
+      .filter((m) => m.excludeFromContext !== true)
       .map((m) => {
         const role = m.role === "steve" ? "assistant" : "user";
         const rawText = String(m.text || "").trim();
         const content = role === "assistant"
-          ? this.sanitizeModelTemplateSlop(rawText)
+          ? this.sanitizeAssistantForRuntime(rawText)
           : rawText;
         return { role, content };
       })
       .filter((m) => m.content.length > 0)
       .filter((m) => {
         if (m.role !== "assistant") return true;
-        if (m.content.length <= 20 && this.isLowSignalAssistantMessage(m.content)) return false;
+        if (this.isLikelyCorruptedAssistantOutput(m.content)) return false;
         return true;
       });
 
@@ -2799,10 +2847,56 @@ export class SteveChatApp {
         }
 
         const elapsedMs = Math.max(1, performance.now() - startedAt);
-        const display = this.composeAssistantParts({
+        let display = this.composeAssistantParts({
           content: streamedText,
           reasoning: streamedReasoning,
         });
+
+        let rescuedFromCorruption = false;
+        if (this.isLikelyCorruptedAssistantOutput(display.text)) {
+          this.setRuntimeState("working", "Response looked unstable. Retrying once with clean context...");
+          try {
+            const rescueMessages = this.applyTemplateToMessages([
+              { role: "user", content: String(text || "").trim() },
+            ]);
+            const rescue = await this.withRuntimeRetry(() => this.runtimeClient.completeOnce({
+              baseUrl: this.state.baseUrl,
+              model: this.state.selectedModel,
+              messages: rescueMessages,
+              maxTokens: Math.max(48, this.state.generation.maxTokens),
+              temperature: this.state.generation.temperature,
+              topP: this.state.generation.topP,
+              topK: this.state.generation.topK,
+              minP: this.state.generation.minP,
+              typicalP: this.state.generation.typicalP,
+              repeatPenalty: this.state.generation.repeatPenalty,
+              customJson: this.state.generation.customRuntimeJson,
+              reasoningEnabled: this.state.reasoningEnabled,
+              signal,
+            }), {
+              signal,
+              baseUrl: this.state.baseUrl,
+              attempts: 4,
+              phaseLabel: "Stability rescue",
+            });
+
+            streamedText = String(rescue?.content || rescue?.reply || streamedText || "").trim();
+            streamedReasoning = String(rescue?.reasoning || streamedReasoning || "").trim();
+            display = this.composeAssistantParts({ content: streamedText, reasoning: streamedReasoning });
+            rescuedFromCorruption = !this.isLikelyCorruptedAssistantOutput(display.text);
+
+            if (rescue) {
+              result = {
+                tps: rescue.tps,
+                promptTokens: rescue.promptTokens,
+                completionTokens: rescue.completionTokens,
+                totalTokens: rescue.totalTokens,
+              };
+            }
+          } catch {
+            // keep original output but quarantine from prompt history below
+          }
+        }
 
         const promptTokens = result?.promptTokens ?? this.estimateTokenCount(text);
         const completionTokens = result?.completionTokens ?? Math.max(1, this.estimateTokenCount(`${display.reasoningText}\n${display.text}`));
@@ -2812,11 +2906,13 @@ export class SteveChatApp {
         const energyMWh = this.addEnergyUsage(finalPowerMw, elapsedMs);
         this.addTokenUsage({ promptTokens, completionTokens, totalTokens });
 
+        const excludeFromContext = this.isLikelyCorruptedAssistantOutput(display.text);
         this.patchMessage(chatId, assistantIndex, {
           text: display.text,
           reasoningText: display.reasoningText,
           pending: false,
           error: false,
+          excludeFromContext,
           tps: finalTps ?? null,
           energyMw: finalPowerMw,
           energyMWh,
@@ -2830,7 +2926,11 @@ export class SteveChatApp {
           content: streamedText,
           reasoning: streamedReasoning,
         });
-        this.setRuntimeState("ok", `Live stream complete. Session energy ${this.formatEnergyMWh(this.state.power.sessionEnergyMWh)}.`);
+        if (excludeFromContext && !rescuedFromCorruption) {
+          this.setRuntimeState("error", "Model output was unstable and quarantined from chat history. Try switching model or tapping reset for a clean context.");
+        } else {
+          this.setRuntimeState("ok", `Live stream complete. Session energy ${this.formatEnergyMWh(this.state.power.sessionEnergyMWh)}.`);
+        }
         return;
       }
 
@@ -2857,10 +2957,44 @@ export class SteveChatApp {
       });
 
       const elapsedMs = Math.max(1, performance.now() - startedAt);
-      const display = this.composeAssistantParts({
-        content: oneShot.content || oneShot.reply,
-        reasoning: oneShot.reasoning,
-      });
+      let content = oneShot.content || oneShot.reply;
+      let reasoning = oneShot.reasoning;
+      let display = this.composeAssistantParts({ content, reasoning });
+
+      if (this.isLikelyCorruptedAssistantOutput(display.text)) {
+        this.setRuntimeState("working", "Response looked unstable. Retrying once with clean context...");
+        try {
+          const rescueMessages = this.applyTemplateToMessages([
+            { role: "user", content: String(text || "").trim() },
+          ]);
+          const rescue = await this.withRuntimeRetry(() => this.runtimeClient.completeOnce({
+            baseUrl: this.state.baseUrl,
+            model: this.state.selectedModel,
+            messages: rescueMessages,
+            maxTokens: Math.max(48, this.state.generation.maxTokens),
+            temperature: this.state.generation.temperature,
+            topP: this.state.generation.topP,
+            topK: this.state.generation.topK,
+            minP: this.state.generation.minP,
+            typicalP: this.state.generation.typicalP,
+            repeatPenalty: this.state.generation.repeatPenalty,
+            customJson: this.state.generation.customRuntimeJson,
+            reasoningEnabled: this.state.reasoningEnabled,
+            signal,
+          }), {
+            signal,
+            baseUrl: this.state.baseUrl,
+            attempts: 4,
+            phaseLabel: "Stability rescue",
+          });
+
+          content = rescue?.content || rescue?.reply || content;
+          reasoning = rescue?.reasoning || reasoning;
+          display = this.composeAssistantParts({ content, reasoning });
+        } catch {
+          // keep original output but quarantine it from prompt history below
+        }
+      }
 
       const promptTokens = oneShot.promptTokens ?? this.estimateTokenCount(text);
       const completionTokens = oneShot.completionTokens ?? this.estimateTokenCount(`${display.reasoningText}\n${display.text}`);
@@ -2871,11 +3005,13 @@ export class SteveChatApp {
 
       this.addTokenUsage({ promptTokens, completionTokens, totalTokens });
 
+      const excludeFromContext = this.isLikelyCorruptedAssistantOutput(display.text);
       this.patchMessage(chatId, assistantIndex, {
         text: display.text,
         reasoningText: display.reasoningText,
         pending: false,
         error: false,
+        excludeFromContext,
         tps: effectiveTps,
         energyMw: powerMw,
         energyMWh,
@@ -2885,10 +3021,14 @@ export class SteveChatApp {
       this.speakText(display.text);
       this.updateReasoningCapabilityFromResponse({
         modelId: this.state.selectedModel,
-        content: oneShot.content || oneShot.reply,
-        reasoning: oneShot.reasoning,
+        content,
+        reasoning,
       });
-      this.setRuntimeState("ok", `Live response complete. Session energy ${this.formatEnergyMWh(this.state.power.sessionEnergyMWh)}.`);
+      if (excludeFromContext) {
+        this.setRuntimeState("error", "Model output was unstable and quarantined from chat history. Try switching model or tapping reset for a clean context.");
+      } else {
+        this.setRuntimeState("ok", `Live response complete. Session energy ${this.formatEnergyMWh(this.state.power.sessionEnergyMWh)}.`);
+      }
     } catch (err) {
       const aborted = err?.name === "AbortError" || /aborted|abort/i.test(String(err?.message || ""));
       if (aborted) {
@@ -2902,6 +3042,7 @@ export class SteveChatApp {
           reasoningText: stopped.reasoningText,
           pending: false,
           error: false,
+          excludeFromContext: true,
         });
         this.renderTokenUi();
         this.setRuntimeState("idle", "Inference stopped.");
@@ -2912,6 +3053,7 @@ export class SteveChatApp {
         text: `Live call failed: ${err.message}`,
         pending: false,
         error: true,
+        excludeFromContext: true,
       });
       this.renderTokenUi();
       this.setRuntimeState("error", `Live call failed: ${err.message}`);
