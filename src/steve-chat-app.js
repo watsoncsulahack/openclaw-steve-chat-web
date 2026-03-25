@@ -52,6 +52,11 @@ const CHAT_TEMPLATE_PRESETS = {
   coder: "You are a coding copilot. Explain tradeoffs, include runnable examples, and call out risks.",
 };
 
+const RUNTIME_STABILITY_PROFILE = {
+  maxHistoryMessages: 10,
+  historyTokenBudget: 260,
+};
+
 export class SteveChatApp {
   constructor() {
     this.els = getDomRefs();
@@ -2452,6 +2457,15 @@ export class SteveChatApp {
     this.schedulePersist();
   }
 
+  isLowSignalAssistantMessage(text = "") {
+    const t = String(text || "").trim().toLowerCase();
+    if (!t) return true;
+    if (/^\(generation stopped\)$/.test(t)) return true;
+    if (/^live call failed:/i.test(t)) return true;
+    if (/^(hi|ok|live|test|yes|no|done|stop|stopped|generation stopped)$/.test(t)) return true;
+    return false;
+  }
+
   buildRuntimeMessages(chatId = this.state.activeChatId) {
     const raw = this.state.messages[chatId] || [];
     const mapped = raw
@@ -2464,7 +2478,12 @@ export class SteveChatApp {
           : rawText;
         return { role, content };
       })
-      .filter((m) => m.content.length > 0);
+      .filter((m) => m.content.length > 0)
+      .filter((m) => {
+        if (m.role !== "assistant") return true;
+        if (m.content.length <= 20 && this.isLowSignalAssistantMessage(m.content)) return false;
+        return true;
+      });
 
     const normalized = [];
     for (const msg of mapped) {
@@ -2484,7 +2503,7 @@ export class SteveChatApp {
 
     // Keep only a recent window, then re-normalize again so truncation never breaks
     // user/assistant alternation (Gemma chat template is strict and returns HTTP 500).
-    const windowed = normalized.slice(-16);
+    const windowed = normalized.slice(-RUNTIME_STABILITY_PROFILE.maxHistoryMessages);
     const safe = [];
     for (const msg of windowed) {
       if (safe.length === 0) {
@@ -2503,7 +2522,7 @@ export class SteveChatApp {
 
     // Additional latency guard: cap prompt history by estimated token budget so
     // first-token latency doesn't explode on long mobile chat threads.
-    const tokenBudget = 420;
+    const tokenBudget = RUNTIME_STABILITY_PROFILE.historyTokenBudget;
     const compact = [];
     let estimated = 0;
 
