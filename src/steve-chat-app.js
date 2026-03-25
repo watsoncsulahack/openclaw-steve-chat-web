@@ -1398,12 +1398,30 @@ export class SteveChatApp {
     return html;
   }
 
+  sanitizeModelTemplateSlop(text = "") {
+    let out = String(text || "");
+
+    out = out.replace(/<\|im_start\|>|<\|im_end\|>|<im_start>|<im_end>/gi, " ");
+    out = out.replace(/<\|START_THINKING\|>|<\|END_THINKING\|>/gi, " ");
+    out = out.replace(/<start_of_turn>|<end_of_turn>|<\|start_of_turn\|>|<\|end_of_turn\|>/gi, " ");
+    out = out.replace(/<\|eot_id\|>|<\|start_header_id\|>|<\|end_header_id\|>/gi, " ");
+    out = out.replace(/(^|\n)\s*(user|assistant|model)\s*:?\s*(?=\n|$)/gi, "$1");
+
+    out = out.replace(/[ \t]+\n/g, "\n");
+    out = out.replace(/\n{3,}/g, "\n\n");
+    return out.trim();
+  }
+
   composeAssistantParts({ content = "", reasoning = "" } = {}) {
-    const cleanContent = String(content || "").trim();
-    const cleanReasoning = this.state.reasoningEnabled ? String(reasoning || "").trim() : "";
+    const cleanContentRaw = String(content || "").trim();
+    const cleanReasoningRaw = String(reasoning || "").trim();
+    const cleanContent = this.sanitizeModelTemplateSlop(cleanContentRaw);
+    const cleanReasoning = this.state.reasoningEnabled
+      ? this.sanitizeModelTemplateSlop(cleanReasoningRaw)
+      : "";
 
     return {
-      text: cleanContent || "(empty reply)",
+      text: cleanContent || (cleanContentRaw ? "(template tokens filtered)" : "(empty reply)"),
       reasoningText: cleanReasoning,
     };
   }
@@ -1461,7 +1479,7 @@ export class SteveChatApp {
 
         const reasoningBody = document.createElement("div");
         reasoningBody.className = "reasoning-body msg-body";
-        reasoningBody.innerHTML = this.renderMarkdownHtml(msg.reasoningText);
+        reasoningBody.innerHTML = this.renderMarkdownHtml(this.sanitizeModelTemplateSlop(msg.reasoningText));
         reasoningWrap.appendChild(reasoningBody);
 
         bubble.appendChild(reasoningWrap);
@@ -1469,7 +1487,10 @@ export class SteveChatApp {
 
       const body = document.createElement("div");
       body.className = "msg-body";
-      body.innerHTML = this.renderMarkdownHtml(msg.text);
+      const displayText = msg.role === "steve"
+        ? this.sanitizeModelTemplateSlop(msg.text)
+        : String(msg.text || "");
+      body.innerHTML = this.renderMarkdownHtml(displayText);
       bubble.appendChild(body);
 
       if (msg.role === "steve" && (msg.tps != null || msg.energyMWh != null)) {
@@ -2435,10 +2456,14 @@ export class SteveChatApp {
     const raw = this.state.messages[chatId] || [];
     const mapped = raw
       .filter((m) => m.role === "user" || m.role === "steve")
-      .map((m) => ({
-        role: m.role === "steve" ? "assistant" : "user",
-        content: (m.text || "").trim(),
-      }))
+      .map((m) => {
+        const role = m.role === "steve" ? "assistant" : "user";
+        const rawText = String(m.text || "").trim();
+        const content = role === "assistant"
+          ? this.sanitizeModelTemplateSlop(rawText)
+          : rawText;
+        return { role, content };
+      })
       .filter((m) => m.content.length > 0);
 
     const normalized = [];
