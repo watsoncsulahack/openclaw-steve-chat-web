@@ -393,6 +393,7 @@ body.theme-light {
 .composer {
   display: grid;
   grid-template-columns: auto 1fr auto auto;
+  align-items: end;
   gap: 8px;
   padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--line);
@@ -405,11 +406,15 @@ body.theme-light {
   border: 1px solid var(--line);
   background: var(--input-bg);
   color: var(--text-strong);
-  border-radius: 999px;
-  padding: 0 14px;
+  border-radius: 20px;
+  padding: 10px 14px;
   min-height: 42px;
+  max-height: 150px;
   outline: none;
   font-size: 16px;
+  line-height: 1.35;
+  resize: none;
+  overflow-y: auto;
 }
 
 #messageInput::placeholder,
