@@ -422,7 +422,11 @@ body.theme-light {
 }
 
 .audio-status {
-  display: none;
+  display: none !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  border: 0 !important;
 }
 
 .recording-wave {
@@ -1029,18 +1033,42 @@ body.theme-light .bubble-reply {
   box-shadow: 0 0 0 2px rgba(111, 140, 255, 0.22);
 }
 
-.composer.recording #messageInput {
+.composer.recording.recording-has-wave #messageInput {
   display: none;
 }
 
+.composer.recording .composer-mic,
 .composer.recording .composer-mic.recording-cancel {
   background: #6a2020;
   border-color: #be5a5a;
 }
 
+.composer.recording .composer-send,
 .composer.recording .composer-send.recording-commit {
   background: #1f7a4f;
   border-color: #4ab987;
+}
+
+.composer.recording .composer-mic svg,
+.composer.recording .composer-send svg,
+.composer.recording .composer-send .send-glyph {
+  display: none !important;
+}
+
+.composer.recording .composer-mic::before {
+  content: "✕";
+  color: #fff;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.composer.recording .composer-send::before {
+  content: "✓";
+  color: #fff;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .hint {

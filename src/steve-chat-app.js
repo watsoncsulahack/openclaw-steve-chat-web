@@ -1907,6 +1907,7 @@ export class SteveChatApp {
 
     const wave = this.ensureRecordingWave();
     wave?.classList.toggle("hidden", !active);
+    this.els.composer?.classList.toggle("recording-has-wave", Boolean(wave));
 
     this.els.messageInput.placeholder = active ? "Listening…" : "TYPE TO CHAT";
 
