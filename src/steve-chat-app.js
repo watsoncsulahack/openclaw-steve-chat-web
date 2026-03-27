@@ -232,6 +232,7 @@ export class SteveChatApp {
     this.syncViewport();
     this.renderAll();
     this.autoSizeComposerInput();
+    this.setAudioStatus("Audio: idle", "");
     this.queueReasoningCapabilityProbe();
   }
 
@@ -1865,6 +1866,13 @@ export class SteveChatApp {
     this.els.connectLocalLlamaBtn.textContent = "Connect";
   }
 
+  setAudioStatus(text, tone = "") {
+    if (!this.els.audioStatusBar) return;
+    this.els.audioStatusBar.textContent = text;
+    this.els.audioStatusBar.classList.remove("recording", "processing", "ready", "error");
+    if (tone) this.els.audioStatusBar.classList.add(tone);
+  }
+
   setRecordingUi(active) {
     this.state.mockMicOn = Boolean(active);
     this.els.micBtn.classList.toggle("active", Boolean(active));
@@ -1874,6 +1882,8 @@ export class SteveChatApp {
     this.els.messageInput.placeholder = active
       ? "Listening… tap mic again to transcribe"
       : "TYPE TO CHAT";
+    if (active) this.setAudioStatus("Audio: recording (tap mic again to stop)", "recording");
+    else this.setAudioStatus("Audio: idle", "");
   }
 
   cleanupMediaCapture() {
@@ -1905,6 +1915,7 @@ export class SteveChatApp {
     // Toggle OFF (stop)
     if (this.mediaRecorder && this.mediaRecorder.state === "recording") {
       this.setRuntimeState("working", "Stopping recording… transcribing to chat input.");
+      this.setAudioStatus("Audio: processing transcription…", "processing");
       if (this.recognition) {
         try { this.recognition.stop(); } catch { /* ignore */ }
       }
@@ -1915,6 +1926,7 @@ export class SteveChatApp {
     // Toggle ON (start)
     if (!navigator.mediaDevices?.getUserMedia) {
       this.setRuntimeState("error", "Microphone API unavailable in this browser/webview.");
+      this.setAudioStatus("Audio: error (microphone API unavailable)", "error");
       return;
     }
 
@@ -1924,6 +1936,7 @@ export class SteveChatApp {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
       this.setRuntimeState("error", "Microphone permission denied or blocked by system settings.");
+      this.setAudioStatus("Audio: error (mic permission blocked)", "error");
       return;
     }
 
@@ -1957,15 +1970,18 @@ export class SteveChatApp {
             text = await this.transcribeRecordedBlob(blob);
           } catch (err) {
             this.setRuntimeState("error", `Recorded audio captured, but STT endpoint failed: ${String(err?.message || err)}`);
+            this.setAudioStatus("Audio: error (STT endpoint failed)", "error");
           }
 
           if (text) {
             this.els.messageInput.value = text;
             this.autoSizeComposerInput();
             this.setRuntimeState("idle", "Transcribed. Review/edit text in TYPE TO CHAT, then send.");
+            this.setAudioStatus("Audio: transcription complete", "ready");
           } else {
             const secs = this.recordingStartedAt ? Math.max(1, Math.round((Date.now() - this.recordingStartedAt) / 1000)) : 0;
             this.setRuntimeState("idle", `Audio captured (${secs}s). Start local STT server at :18777 or set localStorage steve.sttEndpoint.`);
+            this.setAudioStatus("Audio: captured, waiting for STT endpoint", "processing");
           }
         }
       } finally {
@@ -2006,10 +2022,13 @@ export class SteveChatApp {
         const code = String(event.error || "unknown");
         if (code === "not-allowed" || code === "service-not-allowed") {
           this.setRuntimeState("error", "Mic permission blocked. Enable microphone for this site/webview and retry.");
+          this.setAudioStatus("Audio: error (permission blocked)", "error");
         } else if (code === "no-speech") {
           this.setRuntimeState("error", "No speech detected. Tap mic, speak clearly, tap mic again.");
+          this.setAudioStatus("Audio: no speech detected", "error");
         } else {
           this.setRuntimeState("error", `Speech input error: ${code}`);
+          this.setAudioStatus(`Audio: error (${code})`, "error");
         }
       };
 
@@ -2019,10 +2038,13 @@ export class SteveChatApp {
           this.els.messageInput.value = finalDraft;
           this.autoSizeComposerInput();
           this.setRuntimeState("idle", "Transcribed. Review/edit text in TYPE TO CHAT, then send.");
+          this.setAudioStatus("Audio: transcription complete", "ready");
         } else if (this.state.liveMode) {
           this.setRuntimeState("idle", "Live runtime ready.");
+          this.setAudioStatus("Audio: idle", "");
         } else {
           this.setRuntimeState("idle", "UI Demo mode active.");
+          this.setAudioStatus("Audio: idle", "");
         }
         this.recognition = null;
         this.pendingRecorderOnlyTranscription = false;
@@ -2033,6 +2055,7 @@ export class SteveChatApp {
       recognizer.start();
     } else {
       this.setRuntimeState("working", "Recording audio… tap mic again to stop. (speech engine unavailable; using recorder fallback)");
+      this.setAudioStatus("Audio: recording (recorder fallback)", "recording");
     }
 
     this.recordingStartedAt = Date.now();
