@@ -62,6 +62,8 @@ export class SteveChatApp {
     this.els = getDomRefs();
     this.defaultMicInner = this.els?.micBtn?.innerHTML || "";
     this.defaultSendInner = this.els?.sendBtn?.innerHTML || "";
+    this.audioProcessing = false;
+    this.sttAbortController = null;
     this.identicons = new IdenticonService();
     this.runtimeClient = new RuntimeClient();
     this.storage = new StorageService("steve.state.v2");
@@ -608,6 +610,9 @@ export class SteveChatApp {
         this.commitRecordingWithTranscription();
         return;
       }
+      if (this.audioProcessing) {
+        return;
+      }
       if (this.inferenceRunning) {
         this.stopCurrentInference();
         return;
@@ -633,7 +638,7 @@ export class SteveChatApp {
     });
 
     this.els.micBtn.addEventListener("click", () => {
-      if (this.isRecordingActive()) {
+      if (this.isRecordingActive() || this.audioProcessing) {
         this.cancelRecordingNoTranscription();
         return;
       }
@@ -1938,6 +1943,8 @@ export class SteveChatApp {
     if (!this.isRecordingActive()) return;
     this.pendingRecorderOnlyTranscription = true;
     this.cancelledRecording = false;
+    this.audioProcessing = true;
+    this.els.sendBtn?.classList.add("processing");
     this.setRuntimeState("working", "Stopping recording… transcribing to chat input.");
     this.setAudioStatus("Audio: processing transcription…", "processing");
     if (this.recognition) {
@@ -1947,6 +1954,17 @@ export class SteveChatApp {
   }
 
   cancelRecordingNoTranscription() {
+    if (this.audioProcessing && this.sttAbortController) {
+      try { this.sttAbortController.abort(); } catch { /* ignore */ }
+      this.sttAbortController = null;
+      this.audioProcessing = false;
+      this.els.sendBtn?.classList.remove("processing");
+      this.setRecordingUi(false);
+      this.setRuntimeState("idle", "Transcription canceled.");
+      this.setAudioStatus("Audio: canceled", "ready");
+      return;
+    }
+
     if (!this.isRecordingActive()) return;
     this.pendingRecorderOnlyTranscription = false;
     this.cancelledRecording = true;
@@ -1954,6 +1972,8 @@ export class SteveChatApp {
       try { this.recognition.stop(); } catch { /* ignore */ }
     }
     try { this.mediaRecorder.stop(); } catch { /* ignore */ }
+    this.audioProcessing = false;
+    this.els.sendBtn?.classList.remove("processing");
     this.setRuntimeState("idle", "Recording canceled.");
     this.setAudioStatus("Audio: canceled", "ready");
   }
@@ -1973,7 +1993,8 @@ export class SteveChatApp {
     const form = new FormData();
     form.append("file", blob, "recording.webm");
 
-    const res = await fetch(endpoint, { method: "POST", body: form });
+    this.sttAbortController = new AbortController();
+    const res = await fetch(endpoint, { method: "POST", body: form, signal: this.sttAbortController.signal });
     if (!res.ok) {
       throw new Error(`stt endpoint http ${res.status}`);
     }
@@ -2041,8 +2062,14 @@ export class SteveChatApp {
           try {
             text = await this.transcribeRecordedBlob(blob);
           } catch (err) {
-            this.setRuntimeState("error", `Recorded audio captured, but STT endpoint failed: ${String(err?.message || err)}`);
-            this.setAudioStatus("Audio: error (STT endpoint failed)", "error");
+            const aborted = err?.name === "AbortError";
+            if (aborted) {
+              this.setRuntimeState("idle", "Transcription canceled.");
+              this.setAudioStatus("Audio: canceled", "ready");
+            } else {
+              this.setRuntimeState("error", `Recorded audio captured, but STT endpoint failed: ${String(err?.message || err)}`);
+              this.setAudioStatus("Audio: error (STT endpoint failed)", "error");
+            }
           }
 
           if (text) {
@@ -2057,6 +2084,9 @@ export class SteveChatApp {
           }
         }
       } finally {
+        this.sttAbortController = null;
+        this.audioProcessing = false;
+        this.els.sendBtn?.classList.remove("processing");
         this.cleanupMediaCapture();
         if (!this.recognition) {
           this.pendingRecorderOnlyTranscription = false;

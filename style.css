@@ -440,7 +440,9 @@ body.theme-light {
   justify-content: center;
   gap: 4px;
   padding: 0 12px;
-  background: rgba(111, 140, 255, 0.12);
+  background:
+    radial-gradient(circle at 6px 50%, rgba(167,193,255,0.95) 1.6px, transparent 2px) 0 0/12px 100% repeat-x,
+    rgba(111, 140, 255, 0.12);
 }
 
 .recording-wave.hidden {
@@ -451,7 +453,8 @@ body.theme-light {
   width: 3px;
   height: 8px;
   border-radius: 2px;
-  background: #a7c1ff;
+  background: #d5e3ff;
+  box-shadow: 0 0 6px rgba(167,193,255,0.6);
   animation: wavePulse 900ms ease-in-out infinite;
 }
 
@@ -1069,6 +1072,24 @@ body.theme-light .bubble-reply {
   font-size: 20px;
   font-weight: 700;
   line-height: 1;
+}
+
+.composer.recording .composer-send.processing {
+  position: relative;
+}
+
+.composer.recording .composer-send.processing::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  border-top-color: #ffffff;
+  animation: spinRing 850ms linear infinite;
+}
+
+@keyframes spinRing {
+  to { transform: rotate(360deg); }
 }
 
 .hint {
