@@ -1886,23 +1886,45 @@ export class SteveChatApp {
     if (tone) this.els.audioStatusBar.classList.add(tone);
   }
 
+  ensureRecordingWave() {
+    if (this.els.recordingWave) return this.els.recordingWave;
+    const wave = document.createElement("div");
+    wave.id = "recordingWave";
+    wave.className = "recording-wave hidden";
+    wave.setAttribute("aria-live", "polite");
+    wave.setAttribute("aria-label", "Recording in progress");
+    wave.innerHTML = '<span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-label">Recording…</span>';
+    this.els.composer?.insertBefore(wave, this.els.micBtn || null);
+    this.els.recordingWave = wave;
+    return wave;
+  }
+
   setRecordingUi(active) {
     this.state.mockMicOn = Boolean(active);
     this.els.micBtn.classList.toggle("active", Boolean(active));
     this.els.micBtn.setAttribute("aria-pressed", active ? "true" : "false");
     this.els.composer?.classList.toggle("recording", Boolean(active));
-    this.els.recordingWave?.classList.toggle("hidden", !active);
-    this.els.messageInput.placeholder = active
-      ? "Listening…"
-      : "TYPE TO CHAT";
+
+    const wave = this.ensureRecordingWave();
+    wave?.classList.toggle("hidden", !active);
+
+    this.els.messageInput.placeholder = active ? "Listening…" : "TYPE TO CHAT";
 
     if (active) {
+      this.els.micBtn.classList.add("recording-cancel");
+      this.els.sendBtn.classList.add("recording-commit");
       this.els.micBtn.innerHTML = '<span class="stop-glyph">✕</span>';
       this.els.sendBtn.innerHTML = '<span class="stop-glyph">✓</span>';
+      this.els.micBtn.title = "Cancel recording";
+      this.els.sendBtn.title = "Use recording and transcribe";
       this.setAudioStatus("Audio: recording", "recording");
     } else {
+      this.els.micBtn.classList.remove("recording-cancel");
+      this.els.sendBtn.classList.remove("recording-commit");
       if (this.defaultMicInner) this.els.micBtn.innerHTML = this.defaultMicInner;
       if (this.defaultSendInner) this.els.sendBtn.innerHTML = this.defaultSendInner;
+      this.els.micBtn.title = "Toggle microphone";
+      this.els.sendBtn.title = "Send message";
       this.setAudioStatus("Audio: idle", "");
     }
   }

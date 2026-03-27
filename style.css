@@ -1033,12 +1033,12 @@ body.theme-light .bubble-reply {
   display: none;
 }
 
-.composer.recording .composer-mic {
+.composer.recording .composer-mic.recording-cancel {
   background: #6a2020;
   border-color: #be5a5a;
 }
 
-.composer.recording .composer-send {
+.composer.recording .composer-send.recording-commit {
   background: #1f7a4f;
   border-color: #4ab987;
 }
