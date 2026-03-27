@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import cgi
 import json
 import os
 import subprocess
@@ -12,13 +11,37 @@ VENV_PY = "/root/.openclaw/workspace/.venv-stt/bin/python"
 STT_SCRIPT = os.path.join(WORKDIR, "scripts", "stt_transcribe_auto.py")
 
 
+def _extract_multipart_file(content_type: str, body: bytes):
+    if "boundary=" not in content_type:
+        raise ValueError("missing boundary")
+    boundary = content_type.split("boundary=", 1)[1].strip().strip('"')
+    marker = ("--" + boundary).encode()
+
+    parts = body.split(marker)
+    for p in parts:
+      if b"Content-Disposition" not in p:
+        continue
+      header_end = p.find(b"\r\n\r\n")
+      if header_end == -1:
+        continue
+      headers = p[:header_end].decode("utf-8", errors="ignore")
+      if 'name="file"' not in headers:
+        continue
+      data = p[header_end + 4:]
+      # trim CRLF + final boundary trailer fragments
+      data = data.rstrip(b"\r\n")
+      return data
+
+    raise ValueError("file field not found")
+
+
 class Handler(BaseHTTPRequestHandler):
     def _json(self, code, payload):
         body = json.dumps(payload).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS, GET")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -36,25 +59,24 @@ class Handler(BaseHTTPRequestHandler):
         if self.path != "/stt/transcribe":
             return self._json(404, {"ok": False, "error": "not_found"})
 
-        ctype, pdict = cgi.parse_header(self.headers.get("content-type", ""))
-        if ctype != "multipart/form-data":
+        ctype = self.headers.get("content-type", "")
+        if "multipart/form-data" not in ctype:
             return self._json(400, {"ok": False, "error": "expected_multipart_form_data"})
 
-        form = cgi.FieldStorage(
-            fp=self.rfile,
-            headers=self.headers,
-            environ={
-                "REQUEST_METHOD": "POST",
-                "CONTENT_TYPE": self.headers.get("content-type"),
-            },
-        )
+        try:
+            length = int(self.headers.get("content-length", "0"))
+        except ValueError:
+            return self._json(400, {"ok": False, "error": "bad_content_length"})
 
-        file_item = form["file"] if "file" in form else None
-        if not file_item or not getattr(file_item, "file", None):
-            return self._json(400, {"ok": False, "error": "missing_file"})
+        body = self.rfile.read(length)
+
+        try:
+            file_bytes = _extract_multipart_file(ctype, body)
+        except Exception as e:
+            return self._json(400, {"ok": False, "error": "multipart_parse_failed", "details": str(e)})
 
         with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tf:
-            tf.write(file_item.file.read())
+            tf.write(file_bytes)
             in_path = tf.name
 
         try:
