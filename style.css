@@ -28,6 +28,7 @@ html, body {
   color: var(--text);
   height: 100%;
   overflow: hidden;
+  touch-action: manipulation;
 }
 
 body { min-height: 100dvh; }
@@ -392,7 +393,7 @@ body.theme-light {
 
 .composer {
   display: grid;
-  grid-template-columns: auto 1fr auto auto;
+  grid-template-columns: 44px minmax(0, 1fr) 44px 44px;
   align-items: end;
   gap: 8px;
   padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
@@ -400,6 +401,24 @@ body.theme-light {
   background: var(--surface-1);
   position: relative;
   z-index: 2;
+}
+
+.recording-hint {
+  position: absolute;
+  left: 56px;
+  right: 96px;
+  bottom: calc(100% + 6px);
+  border: 1px solid #6f8cff;
+  background: #1f2f74;
+  color: #e7eeff;
+  font-size: 12px;
+  border-radius: 10px;
+  padding: 6px 10px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.26);
+}
+
+.recording-hint.hidden {
+  display: none;
 }
 
 #messageInput {
@@ -410,6 +429,8 @@ body.theme-light {
   padding: 10px 14px;
   min-height: 42px;
   max-height: 150px;
+  min-width: 0;
+  width: 100%;
   outline: none;
   font-size: 16px;
   line-height: 1.35;
@@ -864,6 +885,12 @@ body.theme-light .composer-send {
   border-color: #8ea6ff;
 }
 
+body.theme-light .recording-hint {
+  background: #dfe9ff;
+  border-color: #8ea6ff;
+  color: #1f3a78;
+}
+
 body.theme-light .status-dot {
   background: #6f83bd;
 }
@@ -952,6 +979,14 @@ body.theme-light .bubble-reply {
 .composer-mic.active {
   border-color: #6f8cff;
   background: #2c4bb8;
+  box-shadow: 0 0 0 2px rgba(111, 140, 255, 0.22);
+}
+
+.composer.recording #messageInput {
+  border-color: #6f8cff;
+  background:
+    linear-gradient(90deg, rgba(111,140,255,0.10), rgba(111,140,255,0.02)) padding-box,
+    var(--input-bg);
 }
 
 .hint {
