@@ -51,7 +51,7 @@ def main():
     ap.add_argument("input")
     ap.add_argument("--threshold-sec", type=int, default=60)
     ap.add_argument("--chunk-sec", type=int, default=45)
-    ap.add_argument("--model", default="tiny.en")
+    ap.add_argument("--model", default="base.en")
     ap.add_argument("--compute-type", default="int8")
     ap.add_argument("--json", action="store_true", dest="as_json")
     args = ap.parse_args()
