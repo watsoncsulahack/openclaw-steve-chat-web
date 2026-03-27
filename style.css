@@ -1063,16 +1063,14 @@ body.theme-light .bubble-reply {
   display: none !important;
 }
 
-.composer.recording .composer-mic::before {
-  content: "✕";
-  color: #fff;
-  font-size: 20px;
-  font-weight: 700;
-  line-height: 1;
+.composer.recording .composer-mic::before,
+.composer.recording .composer-send::before {
+  content: none !important;
 }
 
-.composer.recording .composer-send::before {
-  content: "✓";
+.composer.recording .composer-mic .stop-glyph,
+.composer.recording .composer-send .stop-glyph {
+  display: inline-block;
   color: #fff;
   font-size: 20px;
   font-weight: 700;
