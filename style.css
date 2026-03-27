@@ -437,12 +437,17 @@ body.theme-light {
   border-radius: 20px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 0 12px;
-  background:
-    radial-gradient(circle at 6px 50%, rgba(167,193,255,0.95) 1.6px, transparent 2px) 0 0/12px 100% repeat-x,
-    rgba(111, 140, 255, 0.12);
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 10px;
+  background: rgba(111, 140, 255, 0.14);
+}
+
+.wave-canvas {
+  flex: 1 1 auto;
+  width: 100%;
+  height: 24px;
+  display: block;
 }
 
 .recording-wave.hidden {

@@ -64,6 +64,10 @@ export class SteveChatApp {
     this.defaultSendInner = this.els?.sendBtn?.innerHTML || "";
     this.audioProcessing = false;
     this.sttAbortController = null;
+    this.audioContext = null;
+    this.audioAnalyser = null;
+    this.audioDataArray = null;
+    this.audioMeterRaf = 0;
     this.identicons = new IdenticonService();
     this.runtimeClient = new RuntimeClient();
     this.storage = new StorageService("steve.state.v2");
@@ -1898,7 +1902,7 @@ export class SteveChatApp {
     wave.className = "recording-wave hidden";
     wave.setAttribute("aria-live", "polite");
     wave.setAttribute("aria-label", "Recording in progress");
-    wave.innerHTML = '<span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-label">Recording…</span>';
+    wave.innerHTML = '<canvas class="wave-canvas" aria-hidden="true"></canvas><span class="wave-label">Recording…</span>';
     this.els.composer?.insertBefore(wave, this.els.micBtn || null);
     this.els.recordingWave = wave;
     return wave;
@@ -1915,6 +1919,7 @@ export class SteveChatApp {
     this.els.composer?.classList.toggle("recording-has-wave", Boolean(wave));
 
     this.els.messageInput.placeholder = active ? "Listening…" : "TYPE TO CHAT";
+    this.els.messageInput.style.display = active ? "none" : "";
 
     if (active) {
       this.els.micBtn.classList.add("recording-cancel");
@@ -1937,6 +1942,85 @@ export class SteveChatApp {
 
   isRecordingActive() {
     return Boolean(this.mediaRecorder && this.mediaRecorder.state === "recording");
+  }
+
+  startAudioMeter(stream) {
+    this.stopAudioMeter();
+    const canvas = this.els.recordingWave?.querySelector?.(".wave-canvas");
+    if (!canvas) return;
+
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+
+    try {
+      this.audioContext = new Ctx();
+      const source = this.audioContext.createMediaStreamSource(stream);
+      this.audioAnalyser = this.audioContext.createAnalyser();
+      this.audioAnalyser.fftSize = 256;
+      this.audioAnalyser.smoothingTimeConstant = 0.75;
+      this.audioDataArray = new Uint8Array(this.audioAnalyser.frequencyBinCount);
+      source.connect(this.audioAnalyser);
+
+      const draw = () => {
+        const host = this.els.recordingWave;
+        if (!host || host.classList.contains("hidden") || !this.audioAnalyser) return;
+
+        const ratio = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        const w = Math.max(1, Math.floor(rect.width * ratio));
+        const h = Math.max(1, Math.floor(rect.height * ratio));
+        if (canvas.width !== w || canvas.height !== h) {
+          canvas.width = w;
+          canvas.height = h;
+        }
+
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+
+        this.audioAnalyser.getByteFrequencyData(this.audioDataArray);
+
+        ctx.clearRect(0, 0, w, h);
+        const bars = 24;
+        const gap = Math.max(2, Math.floor(w / 220));
+        const totalGap = gap * (bars - 1);
+        const barW = Math.max(2, Math.floor((w - totalGap) / bars));
+        const step = Math.max(1, Math.floor(this.audioDataArray.length / bars));
+
+        for (let i = 0; i < bars; i += 1) {
+          const amp = this.audioDataArray[i * step] / 255;
+          const minH = h * 0.14;
+          const barH = Math.max(minH, amp * h * 0.9);
+          const x = i * (barW + gap);
+          const y = (h - barH) / 2;
+
+          let color = "#7de3a0";
+          if (amp > 0.72) color = "#ff7a7a";
+          else if (amp > 0.42) color = "#ffd56f";
+
+          ctx.fillStyle = color;
+          ctx.fillRect(x, y, barW, barH);
+        }
+
+        this.audioMeterRaf = requestAnimationFrame(draw);
+      };
+
+      draw();
+    } catch {
+      this.stopAudioMeter();
+    }
+  }
+
+  stopAudioMeter() {
+    if (this.audioMeterRaf) {
+      cancelAnimationFrame(this.audioMeterRaf);
+      this.audioMeterRaf = 0;
+    }
+    if (this.audioContext) {
+      try { this.audioContext.close(); } catch { /* ignore */ }
+    }
+    this.audioContext = null;
+    this.audioAnalyser = null;
+    this.audioDataArray = null;
   }
 
   commitRecordingWithTranscription() {
@@ -1979,6 +2063,7 @@ export class SteveChatApp {
   }
 
   cleanupMediaCapture() {
+    this.stopAudioMeter();
     if (this.mediaStream) {
       this.mediaStream.getTracks().forEach((t) => t.stop());
     }
@@ -2030,6 +2115,7 @@ export class SteveChatApp {
     this.mediaStream = stream;
     this.recordedChunks = [];
     this.speechFinalText = "";
+    this.startAudioMeter(stream);
 
     let recorder;
     try {
