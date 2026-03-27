@@ -44,7 +44,7 @@ export function getDomRefs() {
     statusDot: document.querySelector(".status-dot"),
     themeToggleBtn: $("themeToggleBtn"),
     micBtn: $("micBtn"),
-    recordingHint: $("recordingHint"),
+    recordingWave: $("recordingWave"),
     audioStatusBar: $("audioStatusBar"),
     composer: document.querySelector(".composer"),
     replyBanner: $("replyBanner"),

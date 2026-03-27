@@ -60,6 +60,8 @@ const RUNTIME_STABILITY_PROFILE = {
 export class SteveChatApp {
   constructor() {
     this.els = getDomRefs();
+    this.defaultMicInner = this.els?.micBtn?.innerHTML || "";
+    this.defaultSendInner = this.els?.sendBtn?.innerHTML || "";
     this.identicons = new IdenticonService();
     this.runtimeClient = new RuntimeClient();
     this.storage = new StorageService("steve.state.v2");
@@ -75,6 +77,7 @@ export class SteveChatApp {
     this.mediaStream = null;
     this.recordedChunks = [];
     this.pendingRecorderOnlyTranscription = false;
+    this.cancelledRecording = false;
     this.recordingStartedAt = 0;
 
     this.state = this.storage.load(this.createInitialState());
@@ -601,6 +604,10 @@ export class SteveChatApp {
     this.els.saveChatDefaultsBtn?.addEventListener("click", () => this.saveChatDefaults());
 
     this.els.sendBtn.addEventListener("click", () => {
+      if (this.isRecordingActive()) {
+        this.commitRecordingWithTranscription();
+        return;
+      }
       if (this.inferenceRunning) {
         this.stopCurrentInference();
         return;
@@ -625,7 +632,13 @@ export class SteveChatApp {
       this.els.modeHint.textContent = "Attachment/actions menu hook (non-modal).";
     });
 
-    this.els.micBtn.addEventListener("click", () => this.toggleSpeechInput());
+    this.els.micBtn.addEventListener("click", () => {
+      if (this.isRecordingActive()) {
+        this.cancelRecordingNoTranscription();
+        return;
+      }
+      this.toggleSpeechInput();
+    });
 
     this.els.messageInput.addEventListener("focus", () => {
       window.setTimeout(() => this.ensureComposerVisible(), 120);
@@ -1878,12 +1891,48 @@ export class SteveChatApp {
     this.els.micBtn.classList.toggle("active", Boolean(active));
     this.els.micBtn.setAttribute("aria-pressed", active ? "true" : "false");
     this.els.composer?.classList.toggle("recording", Boolean(active));
-    this.els.recordingHint?.classList.toggle("hidden", !active);
+    this.els.recordingWave?.classList.toggle("hidden", !active);
     this.els.messageInput.placeholder = active
-      ? "Listening… tap mic again to transcribe"
+      ? "Listening…"
       : "TYPE TO CHAT";
-    if (active) this.setAudioStatus("Audio: recording (tap mic again to stop)", "recording");
-    else this.setAudioStatus("Audio: idle", "");
+
+    if (active) {
+      this.els.micBtn.innerHTML = '<span class="stop-glyph">✕</span>';
+      this.els.sendBtn.innerHTML = '<span class="stop-glyph">✓</span>';
+      this.setAudioStatus("Audio: recording", "recording");
+    } else {
+      if (this.defaultMicInner) this.els.micBtn.innerHTML = this.defaultMicInner;
+      if (this.defaultSendInner) this.els.sendBtn.innerHTML = this.defaultSendInner;
+      this.setAudioStatus("Audio: idle", "");
+    }
+  }
+
+  isRecordingActive() {
+    return Boolean(this.mediaRecorder && this.mediaRecorder.state === "recording");
+  }
+
+  commitRecordingWithTranscription() {
+    if (!this.isRecordingActive()) return;
+    this.pendingRecorderOnlyTranscription = true;
+    this.cancelledRecording = false;
+    this.setRuntimeState("working", "Stopping recording… transcribing to chat input.");
+    this.setAudioStatus("Audio: processing transcription…", "processing");
+    if (this.recognition) {
+      try { this.recognition.stop(); } catch { /* ignore */ }
+    }
+    try { this.mediaRecorder.stop(); } catch { /* ignore */ }
+  }
+
+  cancelRecordingNoTranscription() {
+    if (!this.isRecordingActive()) return;
+    this.pendingRecorderOnlyTranscription = false;
+    this.cancelledRecording = true;
+    if (this.recognition) {
+      try { this.recognition.stop(); } catch { /* ignore */ }
+    }
+    try { this.mediaRecorder.stop(); } catch { /* ignore */ }
+    this.setRuntimeState("idle", "Recording canceled.");
+    this.setAudioStatus("Audio: canceled", "ready");
   }
 
   cleanupMediaCapture() {
@@ -1912,14 +1961,8 @@ export class SteveChatApp {
   async toggleSpeechInput() {
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-    // Toggle OFF (stop)
-    if (this.mediaRecorder && this.mediaRecorder.state === "recording") {
-      this.setRuntimeState("working", "Stopping recording… transcribing to chat input.");
-      this.setAudioStatus("Audio: processing transcription…", "processing");
-      if (this.recognition) {
-        try { this.recognition.stop(); } catch { /* ignore */ }
-      }
-      try { this.mediaRecorder.stop(); } catch { /* ignore */ }
+    // Guard: recording stop is handled by explicit X (cancel) and ✓ (commit) actions.
+    if (this.isRecordingActive()) {
       return;
     }
 
@@ -1963,6 +2006,12 @@ export class SteveChatApp {
 
     recorder.onstop = async () => {
       try {
+        if (this.cancelledRecording) {
+          this.setRuntimeState("idle", "Recording canceled.");
+          this.setAudioStatus("Audio: canceled", "ready");
+          return;
+        }
+
         if (this.pendingRecorderOnlyTranscription) {
           const blob = new Blob(this.recordedChunks, { type: this.mediaRecorder?.mimeType || "audio/webm" });
           let text = "";
@@ -1988,6 +2037,7 @@ export class SteveChatApp {
         this.cleanupMediaCapture();
         if (!this.recognition) {
           this.pendingRecorderOnlyTranscription = false;
+          this.cancelledRecording = false;
           this.setRecordingUi(false);
           this.els.messageInput.focus();
         }

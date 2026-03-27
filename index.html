@@ -70,7 +70,10 @@
         <footer class="composer">
           <button id="plusBtn" class="composer-icon">＋</button>
           <textarea id="messageInput" rows="1" placeholder="TYPE TO CHAT"></textarea>
-          <div id="recordingHint" class="recording-hint hidden" aria-live="polite">🎙 Recording… tap mic again to transcribe</div>
+          <div id="recordingWave" class="recording-wave hidden" aria-live="polite" aria-label="Recording in progress">
+            <span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span>
+            <span class="wave-label">Recording…</span>
+          </div>
           <button id="micBtn" class="composer-mic" aria-pressed="false" title="Toggle microphone">
             <svg class="mic-glyph" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12 4c-1.8 0-3 1.3-3 3v4c0 1.7 1.2 3 3 3s3-1.3 3-3V7c0-1.7-1.2-3-3-3z" />
