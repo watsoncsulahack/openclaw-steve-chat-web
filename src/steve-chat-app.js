@@ -70,6 +70,12 @@ export class SteveChatApp {
     this.reasoningProbeController = null;
     this.reasoningProbeTimer = null;
     this.inferenceRunning = false;
+    this.speechFinalText = "";
+    this.mediaRecorder = null;
+    this.mediaStream = null;
+    this.recordedChunks = [];
+    this.pendingRecorderOnlyTranscription = false;
+    this.recordingStartedAt = 0;
 
     this.state = this.storage.load(this.createInitialState());
   }
@@ -1859,59 +1865,179 @@ export class SteveChatApp {
     this.els.connectLocalLlamaBtn.textContent = "Connect";
   }
 
-  toggleSpeechInput() {
+  setRecordingUi(active) {
+    this.state.mockMicOn = Boolean(active);
+    this.els.micBtn.classList.toggle("active", Boolean(active));
+    this.els.micBtn.setAttribute("aria-pressed", active ? "true" : "false");
+    this.els.composer?.classList.toggle("recording", Boolean(active));
+    this.els.recordingHint?.classList.toggle("hidden", !active);
+    this.els.messageInput.placeholder = active
+      ? "Listening… tap mic again to transcribe"
+      : "TYPE TO CHAT";
+  }
+
+  cleanupMediaCapture() {
+    if (this.mediaStream) {
+      this.mediaStream.getTracks().forEach((t) => t.stop());
+    }
+    this.mediaStream = null;
+    this.mediaRecorder = null;
+    this.recordedChunks = [];
+  }
+
+  async transcribeRecordedBlob(blob) {
+    const endpoint = String(localStorage.getItem("steve.sttEndpoint") || "http://127.0.0.1:18777/stt/transcribe").trim();
+
+    const form = new FormData();
+    form.append("file", blob, "recording.webm");
+
+    const res = await fetch(endpoint, { method: "POST", body: form });
+    if (!res.ok) {
+      throw new Error(`stt endpoint http ${res.status}`);
+    }
+    const data = await res.json();
+    return String(data?.text || "").trim();
+  }
+
+  async toggleSpeechInput() {
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!Recognition) {
-      this.setRuntimeState("error", "Speech recognition is not available in this browser.");
+
+    // Toggle OFF (stop)
+    if (this.mediaRecorder && this.mediaRecorder.state === "recording") {
+      this.setRuntimeState("working", "Stopping recording… transcribing to chat input.");
+      if (this.recognition) {
+        try { this.recognition.stop(); } catch { /* ignore */ }
+      }
+      try { this.mediaRecorder.stop(); } catch { /* ignore */ }
       return;
     }
 
-    if (this.recognition) {
-      this.recognition.stop();
+    // Toggle ON (start)
+    if (!navigator.mediaDevices?.getUserMedia) {
+      this.setRuntimeState("error", "Microphone API unavailable in this browser/webview.");
       return;
     }
 
-    const recognizer = new Recognition();
-    recognizer.lang = "en-US";
-    recognizer.continuous = false;
-    recognizer.interimResults = true;
+    this.setRuntimeState("working", "Requesting microphone permission…");
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      this.setRuntimeState("error", "Microphone permission denied or blocked by system settings.");
+      return;
+    }
 
-    this.recognition = recognizer;
-    this.state.mockMicOn = true;
-    this.els.micBtn.classList.add("active");
-    this.els.micBtn.setAttribute("aria-pressed", "true");
-    this.setRuntimeState("working", "Listening… speak your prompt.");
+    this.mediaStream = stream;
+    this.recordedChunks = [];
+    this.speechFinalText = "";
 
-    recognizer.onresult = (event) => {
-      let finalText = "";
-      let interim = "";
-      for (let i = event.resultIndex; i < event.results.length; i += 1) {
-        const seg = event.results[i][0]?.transcript || "";
-        if (event.results[i].isFinal) finalText += seg;
-        else interim += seg;
+    let recorder;
+    try {
+      recorder = new MediaRecorder(stream);
+    } catch {
+      this.cleanupMediaCapture();
+      this.setRuntimeState("error", "MediaRecorder unavailable in this browser/webview.");
+      return;
+    }
+
+    this.mediaRecorder = recorder;
+    const hasRecognition = Boolean(Recognition);
+    this.pendingRecorderOnlyTranscription = !hasRecognition;
+
+    recorder.ondataavailable = (ev) => {
+      if (ev?.data && ev.data.size > 0) this.recordedChunks.push(ev.data);
+    };
+
+    recorder.onstop = async () => {
+      try {
+        if (this.pendingRecorderOnlyTranscription) {
+          const blob = new Blob(this.recordedChunks, { type: this.mediaRecorder?.mimeType || "audio/webm" });
+          let text = "";
+          try {
+            text = await this.transcribeRecordedBlob(blob);
+          } catch (err) {
+            this.setRuntimeState("error", `Recorded audio captured, but STT endpoint failed: ${String(err?.message || err)}`);
+          }
+
+          if (text) {
+            this.els.messageInput.value = text;
+            this.autoSizeComposerInput();
+            this.setRuntimeState("idle", "Transcribed. Review/edit text in TYPE TO CHAT, then send.");
+          } else {
+            const secs = this.recordingStartedAt ? Math.max(1, Math.round((Date.now() - this.recordingStartedAt) / 1000)) : 0;
+            this.setRuntimeState("idle", `Audio captured (${secs}s). Start local STT server at :18777 or set localStorage steve.sttEndpoint.`);
+          }
+        }
+      } finally {
+        this.cleanupMediaCapture();
+        if (!this.recognition) {
+          this.pendingRecorderOnlyTranscription = false;
+          this.setRecordingUi(false);
+          this.els.messageInput.focus();
+        }
       }
-      const nextValue = (finalText || interim || "").trim();
-      if (nextValue) this.els.messageInput.value = nextValue;
     };
 
-    recognizer.onerror = (event) => {
-      this.setRuntimeState("error", `Speech input error: ${event.error || "unknown"}`);
-    };
+    if (hasRecognition) {
+      const recognizer = new Recognition();
+      recognizer.lang = "en-US";
+      recognizer.continuous = true;
+      recognizer.interimResults = true;
 
-    recognizer.onend = () => {
-      this.recognition = null;
-      this.state.mockMicOn = false;
-      this.els.micBtn.classList.remove("active");
-      this.els.micBtn.setAttribute("aria-pressed", "false");
-      if (this.state.liveMode) {
-        this.setRuntimeState("idle", "Live runtime ready.");
-      } else {
-        this.setRuntimeState("idle", "UI Demo mode active.");
-      }
-      this.els.messageInput.focus();
-    };
+      this.recognition = recognizer;
 
-    recognizer.start();
+      recognizer.onresult = (event) => {
+        let finalCombined = "";
+        let interim = "";
+        for (let i = 0; i < event.results.length; i += 1) {
+          const seg = event.results[i][0]?.transcript || "";
+          if (event.results[i].isFinal) finalCombined += `${seg} `;
+          else interim += `${seg} `;
+        }
+        this.speechFinalText = finalCombined.trim();
+        const nextValue = (this.speechFinalText || interim || "").trim();
+        if (nextValue) {
+          this.els.messageInput.value = nextValue;
+          this.autoSizeComposerInput();
+        }
+      };
+
+      recognizer.onerror = (event) => {
+        const code = String(event.error || "unknown");
+        if (code === "not-allowed" || code === "service-not-allowed") {
+          this.setRuntimeState("error", "Mic permission blocked. Enable microphone for this site/webview and retry.");
+        } else if (code === "no-speech") {
+          this.setRuntimeState("error", "No speech detected. Tap mic, speak clearly, tap mic again.");
+        } else {
+          this.setRuntimeState("error", `Speech input error: ${code}`);
+        }
+      };
+
+      recognizer.onend = () => {
+        const finalDraft = (this.els.messageInput.value || this.speechFinalText || "").trim();
+        if (finalDraft) {
+          this.els.messageInput.value = finalDraft;
+          this.autoSizeComposerInput();
+          this.setRuntimeState("idle", "Transcribed. Review/edit text in TYPE TO CHAT, then send.");
+        } else if (this.state.liveMode) {
+          this.setRuntimeState("idle", "Live runtime ready.");
+        } else {
+          this.setRuntimeState("idle", "UI Demo mode active.");
+        }
+        this.recognition = null;
+        this.pendingRecorderOnlyTranscription = false;
+        this.setRecordingUi(false);
+        this.els.messageInput.focus();
+      };
+
+      recognizer.start();
+    } else {
+      this.setRuntimeState("working", "Recording audio… tap mic again to stop. (speech engine unavailable; using recorder fallback)");
+    }
+
+    this.recordingStartedAt = Date.now();
+    this.setRecordingUi(true);
+    recorder.start(250);
   }
 
   async connectLocalLlama() {
