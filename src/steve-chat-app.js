@@ -23,25 +23,15 @@ const QVAC_RUNTIME_TARGETS = {
 };
 
 const MODEL_PROFILES = {
-  bitnet1: {
-    id: "1bitLLM-bitnet_b1_58-xl-tq1_0.gguf",
-    name: "BitNet B1.58 XL (1-bit tq1)",
-    modelIndex: 1,
-  },
-  bitnet2: {
-    id: "1bitLLM-bitnet_b1_58-xl-tq2_0.gguf",
-    name: "BitNet B1.58 XL (2-bit tq2)",
-    modelIndex: 2,
-  },
   e2b: {
     id: "gemma-3n-E2B-it-UD-Q4_K_XL.gguf",
     name: "Gemma 3n E2B",
-    modelIndex: 3,
+    modelIndex: 1,
   },
   e4b: {
     id: "gemma-3n-E4B-it-UD-Q4_K_XL.gguf",
     name: "Gemma 3n E4B (4B profile)",
-    modelIndex: 4,
+    modelIndex: 2,
   },
 };
 
@@ -2306,7 +2296,34 @@ export class SteveChatApp {
         warmupTimeoutMs: 28000,
         requestTimeoutMs: 3200,
       });
-      this.setRuntimeState("ok", `Applied ${profile.name} on ${this.getBackendLabel()}.`);
+
+      const runtimeListed = await this.runtimeClient.fetchModelsWithRetry(endpoint, {
+        timeoutMs: 12000,
+        intervalMs: 700,
+        requestTimeoutMs: 3200,
+      });
+
+      const switchedModelKey = this.canonicalModelKey(switched?.modelName || switched?.modelPath || "");
+      const requestedKey = this.canonicalModelKey(profile.id);
+      const runtimeMatched = this.runtimeHasModel(runtimeListed, profile.id) || (switchedModelKey && switchedModelKey === requestedKey);
+
+      if (!runtimeMatched) {
+        const activeRuntimeModel = switched?.modelName || runtimeListed[0]?.id || "unknown";
+        this.ensureModelProfilesPresent(runtimeListed);
+        this.syncModelLabel();
+        this.renderModels();
+        this.setRuntimeState("error", `Model switch mismatch: requested ${profile.name}, runtime reports ${this.shortName(activeRuntimeModel)}.`);
+        this.schedulePersist();
+        return;
+      }
+
+      const matchedRuntimeId = runtimeListed.find((m) => this.runtimeHasModel([m], profile.id))?.id;
+      this.state.selectedModel = matchedRuntimeId || profile.id;
+      localStorage.setItem("steve.model", this.state.selectedModel);
+      this.syncModelLabel();
+      this.renderModels();
+      this.resetActiveChatForModelSwitch(profile.name);
+      this.setRuntimeState("ok", `Applied ${profile.name} on ${this.getBackendLabel()} with fresh context.`);
       this.schedulePersist();
     } catch (err) {
       this.setRuntimeState("error", `Model switch failed: ${String(err?.message || err)}`);
@@ -2643,6 +2660,16 @@ export class SteveChatApp {
     return cleaned.replace(/\.gguf$/i, "");
   }
 
+  canonicalModelKey(modelId = "") {
+    return this.shortName(String(modelId || "")).trim().toLowerCase();
+  }
+
+  runtimeHasModel(runtimeModels = [], modelId = "") {
+    const key = this.canonicalModelKey(modelId);
+    if (!key) return false;
+    return (runtimeModels || []).some((m) => this.canonicalModelKey(m?.id || "") === key);
+  }
+
   formatPower(milliwatts) {
     const n = Number(milliwatts);
     if (!Number.isFinite(n)) return "--";
@@ -2662,6 +2689,19 @@ export class SteveChatApp {
     this.renderPowerUi();
     this.schedulePersist();
     this.setRuntimeState("idle", "Power telemetry reset.");
+  }
+
+  resetActiveChatForModelSwitch(modelName = "") {
+    const chatId = this.state.activeChatId;
+    if (!chatId) return;
+
+    const nextName = String(modelName || "selected model").trim();
+    const note = `Switched runtime model to ${nextName}. New thread ready.`;
+    this.state.messages[chatId] = [{ role: "steve", text: note, excludeFromContext: true }];
+    this.clearReplyTarget();
+    this.renderMessages();
+    this.renderChats();
+    this.schedulePersist();
   }
 
   getAveragePowerMw() {
@@ -3052,11 +3092,11 @@ export class SteveChatApp {
       }
 
       this.ensureModelProfilesPresent(readyModels);
-      if (readyModels.length > 0 && !readyModels.some((m) => m.id === this.state.selectedModel)) {
+      if (readyModels.length > 0 && !this.runtimeHasModel(readyModels, this.state.selectedModel)) {
         const preferred = this.state.modelProfile && MODEL_PROFILES[this.state.modelProfile]
           ? MODEL_PROFILES[this.state.modelProfile].id
           : null;
-        this.state.selectedModel = preferred && this.state.models.some((m) => m.id === preferred)
+        this.state.selectedModel = this.runtimeHasModel(readyModels, preferred)
           ? preferred
           : (readyModels[0]?.id || this.state.selectedModel);
         localStorage.setItem("steve.model", this.state.selectedModel);
