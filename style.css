@@ -1155,6 +1155,7 @@ body.theme-light .bubble-reply {
 }
 
 .settings-modal {
+  position: fixed;
   inset: 0;
   transform: none;
   display: grid;
