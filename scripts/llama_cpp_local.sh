@@ -336,6 +336,10 @@ wait_ready() {
 start() {
   require_bin
   local model_path="$1"
+  local model_alias
+  model_alias="${LLAMA_MODEL_ALIAS:-$(basename "$model_path") }"
+  model_alias="${model_alias%% }"
+  model_alias="${model_alias%.gguf}"
 
   if is_running; then
     local existing_pid
@@ -354,6 +358,7 @@ start() {
 
   local reasoning_enable reasoning_format reasoning_budget bin_help
   local -a reasoning_args=()
+  local -a alias_args=()
   reasoning_enable="${LLAMA_REASONING_ENABLE:-1}"
   reasoning_format="${LLAMA_REASONING_FORMAT:-deepseek-legacy}"
   reasoning_budget="${LLAMA_REASONING_BUDGET:--1}"
@@ -377,6 +382,13 @@ start() {
     fi
   fi
 
+  if [[ -z "$bin_help" ]]; then
+    bin_help="$($BIN --help 2>/dev/null || true)"
+  fi
+  if grep -q -- "--alias" <<<"$bin_help"; then
+    alias_args+=(--alias "$model_alias")
+  fi
+
   echo "[llama-cpp] starting server"
   echo "  backend: $BACKEND_LABEL"
   echo "  bin:     $BIN"
@@ -387,6 +399,7 @@ start() {
   [[ -s "$REASONING_FILE" ]] && echo "  reasoning_format: $(cat "$REASONING_FILE")"
   [[ -s "$REASONING_BUDGET_FILE" ]] && echo "  reasoning_budget: $(cat "$REASONING_BUDGET_FILE")"
   echo "  model:   $model_path"
+  [[ ${#alias_args[@]} -gt 0 ]] && echo "  alias:   $model_alias"
 
   local bin_dir ld_library_path unresolved
   bin_dir="$(dirname "$BIN")"
@@ -414,6 +427,7 @@ start() {
     --host "$HOST" \
     --port "$PORT" \
     --model "$model_path" \
+    "${alias_args[@]}" \
     --ctx-size "$CTX_SIZE" \
     --threads "$THREADS" \
     --n-gpu-layers "$N_GPU_LAYERS" \

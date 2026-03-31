@@ -26,11 +26,13 @@ const MODEL_PROFILES = {
   e2b: {
     id: "gemma-3n-E2B-it-UD-Q4_K_XL.gguf",
     name: "Gemma 3n E2B",
+    memoryGb: 4,
     modelIndex: 1,
   },
   e4b: {
     id: "gemma-3n-E4B-it-UD-Q4_K_XL.gguf",
-    name: "Gemma 3n E4B (4B profile)",
+    name: "Gemma 3n E4B",
+    memoryGb: 8,
     modelIndex: 2,
   },
 };
@@ -225,6 +227,7 @@ export class SteveChatApp {
     if (this.els.typicalPInput) this.els.typicalPInput.value = String(this.state.generation.typicalP);
     if (this.els.repeatPenaltyInput) this.els.repeatPenaltyInput.value = String(this.state.generation.repeatPenalty);
     if (this.els.customRuntimeJsonInput) this.els.customRuntimeJsonInput.value = String(this.state.generation.customRuntimeJson || "");
+    this.els.modelPickerBtn?.setAttribute("aria-expanded", "false");
     this.applyTheme();
     this.bindEvents();
     this.bindViewportFixes();
@@ -317,37 +320,40 @@ export class SteveChatApp {
 
   ensureModelProfilesPresent(runtimeModels = []) {
     const runtime = Array.isArray(runtimeModels) ? runtimeModels : [];
-    const profileModels = Object.values(MODEL_PROFILES).map((p) => ({ id: p.id, name: p.name }));
     const existing = Array.isArray(this.state.models) ? this.state.models : [];
+    const profileEntries = Object.entries(MODEL_PROFILES);
 
     const canonicalKey = (id) => this.shortName(String(id || "")).trim().toLowerCase();
+    const allowedByKey = new Map(
+      profileEntries.map(([, profile]) => [canonicalKey(profile.id), profile]),
+    );
 
-    const merged = [...runtime, ...existing, ...profileModels];
     const byKey = new Map();
+    const merged = [...runtime, ...existing];
 
     for (const model of merged) {
       const id = String(model?.id || "").trim();
       if (!id) continue;
 
-      const key = canonicalKey(id) || id.toLowerCase();
-      const name = String(model?.name || this.shortName(id));
-      const normalized = { id, name };
+      const key = canonicalKey(id);
+      const profile = allowedByKey.get(key);
+      if (!profile) continue;
 
-      const prev = byKey.get(key);
-      if (!prev) {
-        byKey.set(key, normalized);
-        continue;
-      }
-
-      // Prefer profile-labelled entries for readability in model picker.
-      const prevIsProfileName = /Gemma 3n/i.test(prev.name);
-      const nextIsProfileName = /Gemma 3n/i.test(normalized.name);
-      if (!prevIsProfileName && nextIsProfileName) {
-        byKey.set(key, normalized);
-      }
+      byKey.set(key, {
+        id: profile.id,
+        name: profile.name,
+        memoryGb: profile.memoryGb,
+      });
     }
 
-    this.state.models = Array.from(byKey.values());
+    this.state.models = profileEntries.map(([, profile]) => {
+      const key = canonicalKey(profile.id);
+      return byKey.get(key) || {
+        id: profile.id,
+        name: profile.name,
+        memoryGb: profile.memoryGb,
+      };
+    });
 
     const selectedKey = canonicalKey(this.state.selectedModel || "");
     const canonicalSelected = this.state.models.find((m) => canonicalKey(m.id) === selectedKey);
@@ -545,9 +551,22 @@ export class SteveChatApp {
       this.toggleSettingsSheet(false);
     });
 
-    this.els.modelPickerBtn.addEventListener("click", () => this.toggleModelSheet(true));
+    this.els.modelPickerBtn.addEventListener("click", () => this.toggleModelSheet(!this.els.modelSheet.classList.contains("show")));
     this.els.closeModelSheetBtn.addEventListener("click", () => this.toggleModelSheet(false));
     this.els.settingsBtn.addEventListener("click", () => this.toggleSettingsSheet(true));
+
+    document.addEventListener("pointerdown", (e) => {
+      if (!this.els.modelSheet.classList.contains("show")) return;
+      const target = e.target;
+      if (this.els.modelSheet.contains(target) || this.els.modelPickerBtn.contains(target)) return;
+      this.toggleModelSheet(false);
+    });
+
+    window.addEventListener("resize", () => {
+      if (this.els.modelSheet.classList.contains("show")) {
+        this.positionModelSheetAnchor();
+      }
+    }, { passive: true });
     this.els.closeSettingsBtn.addEventListener("click", () => this.toggleSettingsSheet(false));
 
     this.els.saveBaseUrlBtn.addEventListener("click", () => this.saveBaseUrl());
@@ -952,6 +971,10 @@ export class SteveChatApp {
     this.applySidebarLayoutState();
     this.syncBackdrop();
 
+    if (this.els.modelSheet.classList.contains("show")) {
+      this.positionModelSheetAnchor();
+    }
+
     if (document.activeElement === this.els.messageInput) {
       window.setTimeout(() => this.scrollMessagesToBottom(), 40);
       window.setTimeout(() => this.scrollMessagesToBottom(), 200);
@@ -979,9 +1002,36 @@ export class SteveChatApp {
   }
 
   toggleModelSheet(open) {
-    if (open) this.els.settingsSheet.classList.remove("show");
-    this.els.modelSheet.classList.toggle("show", open);
-    this.syncBackdrop();
+    if (open) {
+      this.els.settingsSheet.classList.remove("show");
+      this.els.modelSheet.classList.add("show");
+      this.positionModelSheetAnchor();
+      this.els.modelPickerBtn.setAttribute("aria-expanded", "true");
+      return;
+    }
+
+    this.els.modelSheet.classList.remove("show");
+    this.els.modelPickerBtn.setAttribute("aria-expanded", "false");
+  }
+
+  positionModelSheetAnchor() {
+    const trigger = this.els.modelPickerBtn;
+    const sheet = this.els.modelSheet;
+    if (!trigger || !sheet) return;
+
+    const rect = trigger.getBoundingClientRect();
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+
+    const width = Math.min(420, Math.max(rect.width + 60, 280));
+    const left = Math.max(8, Math.min(rect.left, viewportWidth - width - 8));
+    const top = rect.bottom + 8;
+    const maxHeight = Math.max(180, viewportHeight - top - 8);
+
+    sheet.style.left = `${left}px`;
+    sheet.style.top = `${top}px`;
+    sheet.style.width = `${width}px`;
+    sheet.style.maxHeight = `${maxHeight}px`;
   }
 
   toggleSettingsSheet(open) {
@@ -1043,9 +1093,8 @@ export class SteveChatApp {
 
   syncBackdrop() {
     const settingsOpen = this.els.settingsSheet.classList.contains("show");
-    const modelOpen = this.els.modelSheet.classList.contains("show");
     const mobileDrawerOpen = !this.isWide() && this.els.drawer.classList.contains("open");
-    const show = settingsOpen || modelOpen || mobileDrawerOpen;
+    const show = settingsOpen || mobileDrawerOpen;
 
     this.els.backdrop.classList.toggle("show", show);
     this.els.backdrop.classList.toggle("settings-dim", settingsOpen);
@@ -1139,6 +1188,67 @@ export class SteveChatApp {
     this.renderChats();
     this.renderSidebarRail();
     this.renderMessages();
+    this.schedulePersist();
+  }
+
+  summarizePromptToTitle(prompt = "") {
+    const cleaned = String(prompt || "")
+      .replace(/\s+/g, " ")
+      .replace(/[\r\n]+/g, " ")
+      .trim();
+    if (!cleaned) return "New chat";
+
+    const words = cleaned.split(" ").slice(0, 6);
+    let summary = words.join(" ").trim();
+    if (cleaned.split(" ").length > 6) summary += "…";
+    if (summary.length > 54) summary = `${summary.slice(0, 53)}…`;
+
+    return summary;
+  }
+
+  autoSummarizeChatTitleFromFirstPrompt(chatId, promptText) {
+    const chat = this.state.chats.find((c) => c.id === chatId);
+    if (!chat) return;
+
+    if (!/^new chat\s+\d+$/i.test(String(chat.title || ""))) return;
+
+    const userMessages = (this.state.messages[chatId] || []).filter((m) => m.role === "user");
+    if (userMessages.length !== 1) return;
+
+    chat.title = this.summarizePromptToTitle(promptText);
+    chat.subtitle = "Auto summary";
+    this.renderChats();
+    this.renderSidebarRail();
+    this.schedulePersist();
+  }
+
+  openChatQuickActions(chatId) {
+    const chat = this.state.chats.find((c) => c.id === chatId);
+    if (!chat) return;
+
+    const input = window.prompt(
+      "Chat actions: rename title, or type /archive or /delete",
+      chat.title || "",
+    );
+    if (input == null) return;
+
+    const value = String(input || "").trim();
+    if (!value) return;
+
+    const command = value.toLowerCase();
+    if (command === "/archive") {
+      this.toggleArchiveChat(chatId);
+      return;
+    }
+    if (command === "/delete") {
+      this.deleteChat(chatId);
+      return;
+    }
+
+    chat.title = value.slice(0, 64);
+    chat.subtitle = "Renamed";
+    this.renderChats();
+    this.renderSidebarRail();
     this.schedulePersist();
   }
 
@@ -1261,7 +1371,29 @@ export class SteveChatApp {
         maxTranslate: 74,
       });
 
-      item.addEventListener("contextmenu", (e) => e.preventDefault());
+      item.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        this.openChatQuickActions(chat.id);
+      });
+
+      let holdTimer = null;
+      const clearHoldTimer = () => {
+        if (!holdTimer) return;
+        clearTimeout(holdTimer);
+        holdTimer = null;
+      };
+
+      item.addEventListener("touchstart", () => {
+        clearHoldTimer();
+        holdTimer = window.setTimeout(() => {
+          this.openChatQuickActions(chat.id);
+          clearHoldTimer();
+        }, 560);
+      }, { passive: true });
+
+      item.addEventListener("touchend", clearHoldTimer, { passive: true });
+      item.addEventListener("touchcancel", clearHoldTimer, { passive: true });
+      item.addEventListener("touchmove", clearHoldTimer, { passive: true });
 
       this.els.chatList.appendChild(item);
     });
@@ -1563,7 +1695,18 @@ export class SteveChatApp {
     this.state.models.forEach((model) => {
       const btn = document.createElement("button");
       btn.className = `model-item ${model.id === this.state.selectedModel ? "active" : ""}`;
-      btn.textContent = model.name;
+
+      const title = document.createElement("span");
+      title.className = "model-item-title";
+      title.textContent = model.name;
+
+      const memory = document.createElement("small");
+      memory.className = "model-item-memory";
+      memory.textContent = this.memoryLabelForModelId(model.id);
+
+      btn.appendChild(title);
+      if (memory.textContent) btn.appendChild(memory);
+
       btn.addEventListener("click", async () => {
         this.state.selectedModel = model.id;
         localStorage.setItem("steve.model", model.id);
@@ -2257,6 +2400,14 @@ export class SteveChatApp {
       if (profile.id === id) return key;
     }
     return null;
+  }
+
+  memoryLabelForModelId(modelId) {
+    const profileKey = this.profileKeyForModelId(modelId);
+    const profile = profileKey ? MODEL_PROFILES[profileKey] : null;
+    const mem = Number(profile?.memoryGb || 0);
+    if (!Number.isFinite(mem) || mem <= 0) return "";
+    return `${mem} GB memory required`;
   }
 
   async applyModelProfile(profileKeyInput = null) {
@@ -3031,6 +3182,7 @@ export class SteveChatApp {
       : null;
 
     this.appendMessage("user", text, replyTo ? { replyTo } : {}, chatId);
+    this.autoSummarizeChatTitleFromFirstPrompt(chatId, text);
     this.clearReplyTarget();
 
     if (this.state.liveMode) {
