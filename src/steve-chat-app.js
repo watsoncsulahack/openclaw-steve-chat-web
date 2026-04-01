@@ -2029,15 +2029,22 @@ export class SteveChatApp {
   }
 
   ensureRecordingWave() {
-    if (this.els.recordingWave) return this.els.recordingWave;
-    const wave = document.createElement("div");
-    wave.id = "recordingWave";
-    wave.className = "recording-wave hidden";
-    wave.setAttribute("aria-live", "polite");
-    wave.setAttribute("aria-label", "Recording in progress");
-    wave.innerHTML = '<canvas class="wave-canvas" aria-hidden="true"></canvas><span class="wave-label">Recording…</span>';
-    this.els.composer?.insertBefore(wave, this.els.micBtn || null);
-    this.els.recordingWave = wave;
+    let wave = this.els.recordingWave;
+    if (!wave) {
+      wave = document.createElement("div");
+      wave.id = "recordingWave";
+      wave.className = "recording-wave hidden";
+      wave.setAttribute("aria-live", "polite");
+      wave.setAttribute("aria-label", "Recording in progress");
+      this.els.composer?.insertBefore(wave, this.els.micBtn || null);
+      this.els.recordingWave = wave;
+    }
+
+    // Ensure legacy static markup is upgraded to live canvas meter.
+    if (!wave.querySelector(".wave-canvas")) {
+      wave.innerHTML = '<canvas class="wave-canvas" aria-hidden="true"></canvas><span class="wave-label">Recording…</span>';
+    }
+
     return wave;
   }
 
@@ -2079,7 +2086,9 @@ export class SteveChatApp {
 
   startAudioMeter(stream) {
     this.stopAudioMeter();
-    const canvas = this.els.recordingWave?.querySelector?.(".wave-canvas");
+    const host = this.ensureRecordingWave();
+    const canvas = host?.querySelector?.(".wave-canvas");
+    const label = host?.querySelector?.(".wave-label");
     if (!canvas) return;
 
     const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -2089,14 +2098,16 @@ export class SteveChatApp {
       this.audioContext = new Ctx();
       const source = this.audioContext.createMediaStreamSource(stream);
       this.audioAnalyser = this.audioContext.createAnalyser();
-      this.audioAnalyser.fftSize = 256;
-      this.audioAnalyser.smoothingTimeConstant = 0.75;
-      this.audioDataArray = new Uint8Array(this.audioAnalyser.frequencyBinCount);
+      this.audioAnalyser.fftSize = 1024;
+      this.audioAnalyser.smoothingTimeConstant = 0.85;
+      this.audioDataArray = new Float32Array(this.audioAnalyser.fftSize);
       source.connect(this.audioAnalyser);
 
+      let peakHold = 0;
+
       const draw = () => {
-        const host = this.els.recordingWave;
-        if (!host || host.classList.contains("hidden") || !this.audioAnalyser) return;
+        const waveHost = this.els.recordingWave;
+        if (!waveHost || waveHost.classList.contains("hidden") || !this.audioAnalyser) return;
 
         const ratio = window.devicePixelRatio || 1;
         const rect = canvas.getBoundingClientRect();
@@ -2110,28 +2121,60 @@ export class SteveChatApp {
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
 
-        this.audioAnalyser.getByteFrequencyData(this.audioDataArray);
+        this.audioAnalyser.getFloatTimeDomainData(this.audioDataArray);
+
+        let rms = 0;
+        let peak = 0;
+        for (let i = 0; i < this.audioDataArray.length; i += 1) {
+          const v = this.audioDataArray[i] || 0;
+          const a = Math.abs(v);
+          rms += v * v;
+          if (a > peak) peak = a;
+        }
+        rms = Math.sqrt(rms / Math.max(1, this.audioDataArray.length));
+        peakHold = Math.max(peak, peakHold * 0.92);
 
         ctx.clearRect(0, 0, w, h);
-        const bars = 24;
-        const gap = Math.max(2, Math.floor(w / 220));
+
+        // Live waveform bars (time-domain buckets).
+        const bars = 32;
+        const gap = Math.max(1, Math.floor(w / 320));
         const totalGap = gap * (bars - 1);
         const barW = Math.max(2, Math.floor((w - totalGap) / bars));
         const step = Math.max(1, Math.floor(this.audioDataArray.length / bars));
 
         for (let i = 0; i < bars; i += 1) {
-          const amp = this.audioDataArray[i * step] / 255;
-          const minH = h * 0.14;
-          const barH = Math.max(minH, amp * h * 0.9);
+          const start = i * step;
+          const end = Math.min(this.audioDataArray.length, start + step);
+          let local = 0;
+          for (let k = start; k < end; k += 1) {
+            const av = Math.abs(this.audioDataArray[k]);
+            if (av > local) local = av;
+          }
+
+          const amp = Math.min(1, local * 1.35);
+          const minH = h * 0.12;
+          const barH = Math.max(minH, amp * h * 0.92);
           const x = i * (barW + gap);
           const y = (h - barH) / 2;
 
           let color = "#7de3a0";
-          if (amp > 0.72) color = "#ff7a7a";
-          else if (amp > 0.42) color = "#ffd56f";
+          if (amp > 0.78) color = "#ff7a7a";
+          else if (amp > 0.5) color = "#ffd56f";
 
           ctx.fillStyle = color;
           ctx.fillRect(x, y, barW, barH);
+        }
+
+        // Peak meter indicator line.
+        const meterY = Math.max(1, Math.floor(h * 0.1));
+        const meterW = Math.max(2, Math.floor(w * Math.min(1, peakHold)));
+        ctx.fillStyle = peakHold > 0.78 ? "#ff6f6f" : (peakHold > 0.5 ? "#ffd56f" : "#7de3a0");
+        ctx.fillRect(0, meterY, meterW, Math.max(2, Math.floor(h * 0.08)));
+
+        if (label) {
+          const db = Math.max(-60, Math.round(20 * Math.log10(Math.max(rms, 0.0001))));
+          label.textContent = `Recording… ${db} dB`;
         }
 
         this.audioMeterRaf = requestAnimationFrame(draw);
@@ -2277,17 +2320,22 @@ export class SteveChatApp {
 
         if (this.pendingRecorderOnlyTranscription) {
           const blob = new Blob(this.recordedChunks, { type: this.mediaRecorder?.mimeType || "audio/webm" });
-          let text = "";
-          try {
-            text = await this.transcribeRecordedBlob(blob);
-          } catch (err) {
-            const aborted = err?.name === "AbortError";
-            if (aborted) {
-              this.setRuntimeState("idle", "Transcription canceled.");
-              this.setAudioStatus("Audio: canceled", "ready");
-            } else {
-              this.setRuntimeState("error", `Recorded audio captured, but STT endpoint failed: ${String(err?.message || err)}`);
-              this.setAudioStatus("Audio: error (STT endpoint failed)", "error");
+          let text = (this.els.messageInput.value || this.speechFinalText || "").trim();
+
+          // Prefer already-captured browser speech text when available.
+          // Fall back to local STT endpoint only when browser speech produced nothing.
+          if (!text) {
+            try {
+              text = await this.transcribeRecordedBlob(blob);
+            } catch (err) {
+              const aborted = err?.name === "AbortError";
+              if (aborted) {
+                this.setRuntimeState("idle", "Transcription canceled.");
+                this.setAudioStatus("Audio: canceled", "ready");
+              } else {
+                this.setRuntimeState("error", `Recorded audio captured, but STT endpoint failed: ${String(err?.message || err)}`);
+                this.setAudioStatus("Audio: error (STT endpoint failed)", "error");
+              }
             }
           }
 
@@ -2355,6 +2403,12 @@ export class SteveChatApp {
       };
 
       recognizer.onend = () => {
+        // If commit-to-transcribe is in progress, keep recorder flow as source of truth.
+        if (this.audioProcessing || this.pendingRecorderOnlyTranscription) {
+          this.recognition = null;
+          return;
+        }
+
         const finalDraft = (this.els.messageInput.value || this.speechFinalText || "").trim();
         if (finalDraft) {
           this.els.messageInput.value = finalDraft;

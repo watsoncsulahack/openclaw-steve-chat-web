@@ -71,7 +71,7 @@
           <button id="plusBtn" class="composer-icon">＋</button>
           <textarea id="messageInput" rows="1" placeholder="TYPE TO CHAT"></textarea>
           <div id="recordingWave" class="recording-wave hidden" aria-live="polite" aria-label="Recording in progress">
-            <span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span>
+            <canvas class="wave-canvas" aria-hidden="true"></canvas>
             <span class="wave-label">Recording…</span>
           </div>
           <button id="micBtn" class="composer-mic" aria-pressed="false" title="Toggle microphone">
@@ -226,6 +226,6 @@
       </article>
     </template>
 
-    <script type="module" src="./src/main.js?v=20260331a"></script>
+    <script type="module" src="./src/main.js?v=20260401b"></script>
   </body>
 </html>
