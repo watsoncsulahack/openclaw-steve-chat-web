@@ -2090,7 +2090,7 @@ export class SteveChatApp {
       this.els.plusBtn.classList.toggle("paused", paused);
       this.els.composer?.classList.toggle("recording-paused", paused);
 
-      this.els.plusBtn.innerHTML = `<span class="pause-glyph">${paused ? "▶" : "⏸"}</span>`;
+      this.els.plusBtn.innerHTML = '<span class="pause-glyph"><span></span><span></span></span>';
       this.els.plusBtn.title = paused ? "Resume recording" : "Pause recording";
 
       this.els.micBtn.innerHTML = '<span class="stop-glyph">■</span>';
@@ -2173,7 +2173,7 @@ export class SteveChatApp {
       this.stopAudioMeter();
       this.els.composer?.classList.add("recording-paused");
       this.els.plusBtn.classList.add("paused");
-      this.els.plusBtn.innerHTML = '<span class="pause-glyph">▶</span>';
+      this.els.plusBtn.innerHTML = '<span class="pause-glyph"><span></span><span></span></span>';
       this.els.plusBtn.title = "Resume recording";
       this.updateRecordingTimerLabel();
       this.setRuntimeState("idle", "Recording paused.");
@@ -2189,7 +2189,7 @@ export class SteveChatApp {
       }
       this.els.composer?.classList.remove("recording-paused");
       this.els.plusBtn.classList.remove("paused");
-      this.els.plusBtn.innerHTML = '<span class="pause-glyph">⏸</span>';
+      this.els.plusBtn.innerHTML = '<span class="pause-glyph"><span></span><span></span></span>';
       this.els.plusBtn.title = "Pause recording";
       if (this.mediaStream) this.startAudioMeter(this.mediaStream);
       this.setRuntimeState("working", "Recording audio…");
