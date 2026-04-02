@@ -78,6 +78,9 @@ export class SteveChatApp {
     this.pendingRecorderOnlyTranscription = false;
     this.cancelledRecording = false;
     this.recordingStartedAt = 0;
+    this.recordingPausedAt = 0;
+    this.recordingPausedAccumMs = 0;
+    this.waveHistory = [];
     this.recordingBaseText = "";
     this.speechDraftText = "";
 
@@ -541,7 +544,7 @@ export class SteveChatApp {
     const padding = (Number.parseFloat(cs.paddingTop || "0") || 0) + (Number.parseFloat(cs.paddingBottom || "0") || 0);
     const border = (Number.parseFloat(cs.borderTopWidth || "0") || 0) + (Number.parseFloat(cs.borderBottomWidth || "0") || 0);
 
-    const minH = Math.ceil(lineHeight * 1.8 + padding + border);
+    const minH = 46; // match icon height at rest
     const maxH = Math.ceil(lineHeight * 6 + padding + border); // 6 lines before internal scroll
     const target = Math.max(minH, Math.min(maxH, Number(el.scrollHeight || minH)));
     el.style.height = `${target}px`;
@@ -2057,7 +2060,7 @@ export class SteveChatApp {
 
     // Ensure legacy static markup is upgraded to live canvas meter.
     if (!wave.querySelector(".wave-canvas")) {
-      wave.innerHTML = '<canvas class="wave-canvas" aria-hidden="true"></canvas><span class="wave-label">Recording…</span>';
+      wave.innerHTML = '<canvas class="wave-canvas" aria-hidden="true"></canvas><span class="wave-timer">00:00:00</span>';
     }
 
     return wave;
@@ -2073,7 +2076,7 @@ export class SteveChatApp {
     wave?.classList.toggle("hidden", !active);
     this.els.composer?.classList.toggle("recording-has-wave", Boolean(wave));
 
-    this.els.messageInput.placeholder = active ? "Listening…" : "TYPE TO CHAT";
+    this.els.messageInput.placeholder = active ? "Listening…" : "Chat...";
     this.els.messageInput.style.display = active ? "none" : "";
 
     if (active) {
@@ -2123,6 +2126,30 @@ export class SteveChatApp {
     return `${head}\n${tail}`;
   }
 
+  getRecordingElapsedMs() {
+    if (!this.recordingStartedAt) return 0;
+    const now = Date.now();
+    let elapsed = now - this.recordingStartedAt - this.recordingPausedAccumMs;
+    if (this.isRecordingPaused() && this.recordingPausedAt > 0) {
+      elapsed -= (now - this.recordingPausedAt);
+    }
+    return Math.max(0, elapsed);
+  }
+
+  formatElapsedHms(ms) {
+    const totalSec = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
+    const hh = Math.floor(totalSec / 3600);
+    const mm = Math.floor((totalSec % 3600) / 60);
+    const ss = totalSec % 60;
+    return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+  }
+
+  updateRecordingTimerLabel() {
+    const timer = this.els.recordingWave?.querySelector?.(".wave-timer");
+    if (!timer) return;
+    timer.textContent = this.formatElapsedHms(this.getRecordingElapsedMs());
+  }
+
   toggleRecordingPause() {
     if (!this.mediaRecorder) return;
 
@@ -2133,13 +2160,13 @@ export class SteveChatApp {
         this.recognition = null;
         this.pendingRecorderOnlyTranscription = true;
       }
+      this.recordingPausedAt = Date.now();
       this.stopAudioMeter();
       this.els.composer?.classList.add("recording-paused");
       this.els.plusBtn.classList.add("paused");
       this.els.plusBtn.innerHTML = '<span class="pause-glyph">▶</span>';
       this.els.plusBtn.title = "Resume recording";
-      const label = this.els.recordingWave?.querySelector?.(".wave-label");
-      if (label) label.textContent = "Paused";
+      this.updateRecordingTimerLabel();
       this.setRuntimeState("idle", "Recording paused.");
       this.setAudioStatus("Audio: paused", "ready");
       return;
@@ -2147,6 +2174,10 @@ export class SteveChatApp {
 
     if (this.mediaRecorder.state === "paused") {
       try { this.mediaRecorder.resume(); } catch { /* ignore */ }
+      if (this.recordingPausedAt > 0) {
+        this.recordingPausedAccumMs += Math.max(0, Date.now() - this.recordingPausedAt);
+        this.recordingPausedAt = 0;
+      }
       this.els.composer?.classList.remove("recording-paused");
       this.els.plusBtn.classList.remove("paused");
       this.els.plusBtn.innerHTML = '<span class="pause-glyph">⏸</span>';
@@ -2161,7 +2192,6 @@ export class SteveChatApp {
     this.stopAudioMeter();
     const host = this.ensureRecordingWave();
     const canvas = host?.querySelector?.(".wave-canvas");
-    const label = host?.querySelector?.(".wave-label");
     if (!canvas) return;
 
     const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -2172,11 +2202,11 @@ export class SteveChatApp {
       const source = this.audioContext.createMediaStreamSource(stream);
       this.audioAnalyser = this.audioContext.createAnalyser();
       this.audioAnalyser.fftSize = 1024;
-      this.audioAnalyser.smoothingTimeConstant = 0.85;
+      this.audioAnalyser.smoothingTimeConstant = 0.82;
       this.audioDataArray = new Float32Array(this.audioAnalyser.fftSize);
       source.connect(this.audioAnalyser);
 
-      let peakHold = 0;
+      this.waveHistory = [];
 
       const draw = () => {
         const waveHost = this.els.recordingWave;
@@ -2200,22 +2230,23 @@ export class SteveChatApp {
 
         this.audioAnalyser.getFloatTimeDomainData(this.audioDataArray);
 
-        let rms = 0;
+        // Current amplitude sample for right-edge insertion.
         let peak = 0;
         for (let i = 0; i < this.audioDataArray.length; i += 1) {
-          const v = this.audioDataArray[i] || 0;
-          const a = Math.abs(v);
-          rms += v * v;
+          const a = Math.abs(this.audioDataArray[i] || 0);
           if (a > peak) peak = a;
         }
-        rms = Math.sqrt(rms / Math.max(1, this.audioDataArray.length));
-        peakHold = Math.max(peak, peakHold * 0.92);
+        const ampNow = Math.min(1, peak * 1.55);
+
+        // Scrolling waveform history (right-to-left).
+        const bars = 48;
+        this.waveHistory.push(ampNow);
+        while (this.waveHistory.length > bars) this.waveHistory.shift();
 
         ctx.clearRect(0, 0, w, h);
 
-        // Baseline + peak-style vertical bars (concept style).
         const midY = Math.floor(h / 2);
-        ctx.setLineDash([6 * ratio, 5 * ratio]);
+        ctx.setLineDash([5 * ratio, 4 * ratio]);
         ctx.strokeStyle = "rgba(88, 255, 154, 0.75)";
         ctx.lineWidth = Math.max(1, ratio);
         ctx.beginPath();
@@ -2224,21 +2255,10 @@ export class SteveChatApp {
         ctx.stroke();
         ctx.setLineDash([]);
 
-        const bars = 40;
-        const step = Math.max(1, Math.floor(this.audioDataArray.length / bars));
         const spacing = w / bars;
-
-        for (let i = 0; i < bars; i += 1) {
-          const start = i * step;
-          const end = Math.min(this.audioDataArray.length, start + step);
-          let local = 0;
-          for (let k = start; k < end; k += 1) {
-            const av = Math.abs(this.audioDataArray[k]);
-            if (av > local) local = av;
-          }
-
-          const amp = Math.min(1, local * 1.5);
-          if (amp < 0.035) continue;
+        for (let i = 0; i < this.waveHistory.length; i += 1) {
+          const amp = this.waveHistory[i] || 0;
+          if (amp < 0.03) continue;
 
           const x = Math.floor(i * spacing + spacing * 0.5);
           const barH = Math.max(2 * ratio, amp * h * 0.46);
@@ -2248,24 +2268,14 @@ export class SteveChatApp {
           else if (amp > 0.5) color = "#ffd65e";
 
           ctx.strokeStyle = color;
-          ctx.lineWidth = Math.max(1.2 * ratio, spacing * 0.2);
+          ctx.lineWidth = Math.max(1.1 * ratio, spacing * 0.18);
           ctx.beginPath();
           ctx.moveTo(x, midY - barH);
           ctx.lineTo(x, midY + barH);
           ctx.stroke();
         }
 
-        // Peak hold indicator at top edge.
-        const meterY = Math.max(1, Math.floor(h * 0.12));
-        const meterW = Math.max(2, Math.floor(w * Math.min(1, peakHold)));
-        ctx.fillStyle = peakHold > 0.78 ? "#ff6f6f" : (peakHold > 0.5 ? "#ffd56f" : "#72f5a8");
-        ctx.fillRect(0, meterY, meterW, Math.max(2, Math.floor(h * 0.08)));
-
-        if (label) {
-          const db = Math.max(-60, Math.round(20 * Math.log10(Math.max(rms, 0.0001))));
-          label.textContent = `Recording… ${db} dB`;
-        }
-
+        this.updateRecordingTimerLabel();
         this.audioMeterRaf = requestAnimationFrame(draw);
       };
 
@@ -2298,10 +2308,13 @@ export class SteveChatApp {
     this.setAudioStatus("Audio: processing transcription…", "processing");
 
     // Freeze live meter while transcribing to signal recording has ended.
+    if (this.recordingPausedAt > 0) {
+      this.recordingPausedAccumMs += Math.max(0, Date.now() - this.recordingPausedAt);
+      this.recordingPausedAt = 0;
+    }
     this.stopAudioMeter();
     this.els.composer?.classList.add("recording-paused");
-    const label = this.els.recordingWave?.querySelector?.(".wave-label");
-    if (label) label.textContent = "Transcribing…";
+    this.updateRecordingTimerLabel();
 
     if (this.recognition) {
       try { this.recognition.stop(); } catch { /* ignore */ }
@@ -2346,6 +2359,10 @@ export class SteveChatApp {
     this.mediaStream = null;
     this.mediaRecorder = null;
     this.recordedChunks = [];
+    this.recordingStartedAt = 0;
+    this.recordingPausedAt = 0;
+    this.recordingPausedAccumMs = 0;
+    this.waveHistory = [];
   }
 
   async transcribeRecordedBlob(blob) {
@@ -2551,7 +2568,10 @@ export class SteveChatApp {
     }
 
     this.recordingStartedAt = Date.now();
+    this.recordingPausedAt = 0;
+    this.recordingPausedAccumMs = 0;
     this.setRecordingUi(true);
+    this.updateRecordingTimerLabel();
     this.startAudioMeter(stream);
     recorder.start(250);
   }

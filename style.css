@@ -457,36 +457,14 @@ body.theme-light {
   display: none;
 }
 
-.wave-bar {
-  width: 3px;
-  height: 8px;
-  border-radius: 2px;
-  background: #d5e3ff;
-  box-shadow: 0 0 6px rgba(167,193,255,0.6);
-  animation: wavePulse 900ms ease-in-out infinite;
-}
-
-.wave-bar:nth-child(2) { animation-delay: 120ms; }
-.wave-bar:nth-child(3) { animation-delay: 240ms; }
-.wave-bar:nth-child(4) { animation-delay: 360ms; }
-.wave-bar:nth-child(5) { animation-delay: 480ms; }
-
-.wave-label {
+.wave-timer {
   position: absolute;
-  right: 14px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 12px;
-  color: #dce7ff;
-  background: rgba(10, 18, 46, 0.55);
-  border-radius: 10px;
-  padding: 2px 8px;
+  right: 12px;
+  bottom: 4px;
+  font-size: 11px;
+  color: rgba(220, 231, 255, 0.9);
+  letter-spacing: 0.02em;
   pointer-events: none;
-}
-
-@keyframes wavePulse {
-  0%, 100% { transform: scaleY(0.8); opacity: 0.7; }
-  50% { transform: scaleY(2.2); opacity: 1; }
 }
 
 #messageInput {
@@ -495,8 +473,8 @@ body.theme-light {
   background: var(--input-bg);
   color: var(--text-strong);
   border-radius: 24px;
-  padding: 12px 16px;
-  min-height: 52px;
+  padding: 10px 14px;
+  min-height: 46px;
   max-height: 180px;
   min-width: 220px;
   width: 100%;
