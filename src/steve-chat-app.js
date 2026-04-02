@@ -2347,7 +2347,8 @@ export class SteveChatApp {
       this.audioProcessing = false;
       this.els.sendBtn?.classList.remove("processing");
       this.setRecordingUi(false);
-      this.recordingBaseText = "";
+      // Preserve whatever draft is currently visible in the composer.
+      this.recordingBaseText = String(this.els.messageInput?.value || this.recordingBaseText || "").trimEnd();
       this.speechDraftText = "";
       this.setRuntimeState("idle", "Transcription canceled.");
       this.setAudioStatus("Audio: canceled", "ready");
@@ -2472,6 +2473,7 @@ export class SteveChatApp {
         if (this.pendingRecorderOnlyTranscription) {
           const blob = new Blob(this.recordedChunks, { type: this.mediaRecorder?.mimeType || "audio/webm" });
           let spokenText = (this.speechFinalText || this.speechDraftText || "").trim();
+          let transcriptionCanceled = false;
 
           // Fall back to local STT endpoint only when browser speech produced nothing.
           if (!spokenText) {
@@ -2480,6 +2482,7 @@ export class SteveChatApp {
             } catch (err) {
               const aborted = err?.name === "AbortError";
               if (aborted) {
+                transcriptionCanceled = true;
                 this.setRuntimeState("idle", "Transcription canceled.");
                 this.setAudioStatus("Audio: canceled", "ready");
               } else {
@@ -2495,6 +2498,10 @@ export class SteveChatApp {
             this.autoSizeComposerInput();
             this.setRuntimeState("idle", "Transcribed. Review/edit text in Chat box, then send.");
             this.setAudioStatus("Audio: transcription complete", "ready");
+          } else if (transcriptionCanceled) {
+            // Preserve current draft text when user cancels during transcription.
+            this.els.messageInput.value = String(this.els.messageInput?.value || this.recordingBaseText || "").trimEnd();
+            this.autoSizeComposerInput();
           } else {
             // Keep pre-recording text unchanged when no speech is detected.
             this.els.messageInput.value = this.recordingBaseText;
