@@ -78,6 +78,8 @@ export class SteveChatApp {
     this.pendingRecorderOnlyTranscription = false;
     this.cancelledRecording = false;
     this.recordingStartedAt = 0;
+    this.recordingBaseText = "";
+    this.speechDraftText = "";
 
     this.state = this.storage.load(this.createInitialState());
   }
@@ -533,7 +535,15 @@ export class SteveChatApp {
     const el = this.els.messageInput;
     if (!el) return;
     el.style.height = "auto";
-    const target = Math.max(42, Math.min(150, Number(el.scrollHeight || 42)));
+
+    const cs = window.getComputedStyle(el);
+    const lineHeight = Number.parseFloat(cs.lineHeight || "22") || 22;
+    const padding = (Number.parseFloat(cs.paddingTop || "0") || 0) + (Number.parseFloat(cs.paddingBottom || "0") || 0);
+    const border = (Number.parseFloat(cs.borderTopWidth || "0") || 0) + (Number.parseFloat(cs.borderBottomWidth || "0") || 0);
+
+    const minH = Math.ceil(lineHeight * 1.8 + padding + border);
+    const maxH = Math.ceil(lineHeight * 6 + padding + border); // 6 lines before internal scroll
+    const target = Math.max(minH, Math.min(maxH, Number(el.scrollHeight || minH)));
     el.style.height = `${target}px`;
   }
 
@@ -620,7 +630,7 @@ export class SteveChatApp {
     this.els.saveChatDefaultsBtn?.addEventListener("click", () => this.saveChatDefaults());
 
     this.els.sendBtn.addEventListener("click", () => {
-      if (this.isRecordingActive()) {
+      if (this.isRecordingActive() || this.isRecordingPaused()) {
         this.commitRecordingWithTranscription();
         return;
       }
@@ -2105,6 +2115,14 @@ export class SteveChatApp {
     return Boolean(this.mediaRecorder && this.mediaRecorder.state === "paused");
   }
 
+  appendTranscriptionToBase(base, speechText) {
+    const head = String(base || "").trimEnd();
+    const tail = String(speechText || "").trim();
+    if (!tail) return head;
+    if (!head) return tail;
+    return `${head}\n${tail}`;
+  }
+
   toggleRecordingPause() {
     if (!this.mediaRecorder) return;
 
@@ -2278,6 +2296,13 @@ export class SteveChatApp {
     this.els.sendBtn?.classList.add("processing");
     this.setRuntimeState("working", "Stopping recording… transcribing to chat input.");
     this.setAudioStatus("Audio: processing transcription…", "processing");
+
+    // Freeze live meter while transcribing to signal recording has ended.
+    this.stopAudioMeter();
+    this.els.composer?.classList.add("recording-paused");
+    const label = this.els.recordingWave?.querySelector?.(".wave-label");
+    if (label) label.textContent = "Transcribing…";
+
     if (this.recognition) {
       try { this.recognition.stop(); } catch { /* ignore */ }
     }
@@ -2291,6 +2316,8 @@ export class SteveChatApp {
       this.audioProcessing = false;
       this.els.sendBtn?.classList.remove("processing");
       this.setRecordingUi(false);
+      this.recordingBaseText = "";
+      this.speechDraftText = "";
       this.setRuntimeState("idle", "Transcription canceled.");
       this.setAudioStatus("Audio: canceled", "ready");
       return;
@@ -2305,6 +2332,8 @@ export class SteveChatApp {
     try { this.mediaRecorder.stop(); } catch { /* ignore */ }
     this.audioProcessing = false;
     this.els.sendBtn?.classList.remove("processing");
+    this.recordingBaseText = "";
+    this.speechDraftText = "";
     this.setRuntimeState("idle", "Recording canceled.");
     this.setAudioStatus("Audio: canceled", "ready");
   }
@@ -2361,7 +2390,9 @@ export class SteveChatApp {
 
     this.mediaStream = stream;
     this.recordedChunks = [];
+    this.recordingBaseText = String(this.els.messageInput?.value || "").trimEnd();
     this.speechFinalText = "";
+    this.speechDraftText = "";
 
     let recorder;
     try {
@@ -2399,13 +2430,12 @@ export class SteveChatApp {
 
         if (this.pendingRecorderOnlyTranscription) {
           const blob = new Blob(this.recordedChunks, { type: this.mediaRecorder?.mimeType || "audio/webm" });
-          let text = (this.els.messageInput.value || this.speechFinalText || "").trim();
+          let spokenText = (this.speechFinalText || this.speechDraftText || "").trim();
 
-          // Prefer already-captured browser speech text when available.
           // Fall back to local STT endpoint only when browser speech produced nothing.
-          if (!text) {
+          if (!spokenText) {
             try {
-              text = await this.transcribeRecordedBlob(blob);
+              spokenText = await this.transcribeRecordedBlob(blob);
             } catch (err) {
               const aborted = err?.name === "AbortError";
               if (aborted) {
@@ -2418,15 +2448,19 @@ export class SteveChatApp {
             }
           }
 
-          if (text) {
-            this.els.messageInput.value = text;
+          if (spokenText) {
+            const merged = this.appendTranscriptionToBase(this.recordingBaseText, spokenText);
+            this.els.messageInput.value = merged;
             this.autoSizeComposerInput();
             this.setRuntimeState("idle", "Transcribed. Review/edit text in TYPE TO CHAT, then send.");
             this.setAudioStatus("Audio: transcription complete", "ready");
           } else {
+            // Keep pre-recording text unchanged when no speech is detected.
+            this.els.messageInput.value = this.recordingBaseText;
+            this.autoSizeComposerInput();
             const secs = this.recordingStartedAt ? Math.max(1, Math.round((Date.now() - this.recordingStartedAt) / 1000)) : 0;
-            this.setRuntimeState("idle", `Audio captured (${secs}s). Start local STT server at :18777 or set localStorage steve.sttEndpoint.`);
-            this.setAudioStatus("Audio: captured, waiting for STT endpoint", "processing");
+            this.setRuntimeState("idle", `Audio captured (${secs}s), but no speech was detected.`);
+            this.setAudioStatus("Audio: no speech detected", "error");
           }
         }
       } finally {
@@ -2438,6 +2472,8 @@ export class SteveChatApp {
           this.pendingRecorderOnlyTranscription = false;
           this.cancelledRecording = false;
           this.setRecordingUi(false);
+          this.recordingBaseText = "";
+          this.speechDraftText = "";
           this.els.messageInput.focus();
         }
       }
@@ -2460,11 +2496,11 @@ export class SteveChatApp {
           else interim += `${seg} `;
         }
         this.speechFinalText = finalCombined.trim();
-        const nextValue = (this.speechFinalText || interim || "").trim();
-        if (nextValue) {
-          this.els.messageInput.value = nextValue;
-          this.autoSizeComposerInput();
-        }
+        this.speechDraftText = (this.speechFinalText || interim || "").trim();
+
+        const merged = this.appendTranscriptionToBase(this.recordingBaseText, this.speechDraftText);
+        this.els.messageInput.value = merged;
+        this.autoSizeComposerInput();
       };
 
       recognizer.onerror = (event) => {
