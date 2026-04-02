@@ -81,6 +81,7 @@ export class SteveChatApp {
     this.recordingPausedAt = 0;
     this.recordingPausedAccumMs = 0;
     this.waveHistory = [];
+    this.waveScrollIntervalMs = 110;
     this.recordingBaseText = "";
     this.speechDraftText = "";
 
@@ -2107,6 +2108,12 @@ export class SteveChatApp {
       this.els.micBtn.title = "Toggle microphone";
       this.els.sendBtn.title = "Send message";
       this.setAudioStatus("Audio: idle", "");
+
+      // Recompute text area height after it becomes visible again.
+      requestAnimationFrame(() => {
+        this.autoSizeComposerInput();
+        requestAnimationFrame(() => this.autoSizeComposerInput());
+      });
     }
   }
 
@@ -2207,6 +2214,10 @@ export class SteveChatApp {
       source.connect(this.audioAnalyser);
 
       this.waveHistory = [];
+      const bars = 56;
+      const shiftEveryMs = Math.max(40, Number(this.waveScrollIntervalMs) || 110);
+      let lastShiftAt = performance.now();
+      let shiftPeak = 0;
 
       const draw = () => {
         const waveHost = this.els.recordingWave;
@@ -2238,10 +2249,15 @@ export class SteveChatApp {
         }
         const ampNow = Math.min(1, peak * 1.55);
 
-        // Scrolling waveform history (right-to-left).
-        const bars = 48;
-        this.waveHistory.push(ampNow);
-        while (this.waveHistory.length > bars) this.waveHistory.shift();
+        // Scrolling waveform history (right-to-left), throttled for slower native-like travel speed.
+        shiftPeak = Math.max(shiftPeak, ampNow);
+        const nowMs = performance.now();
+        while ((nowMs - lastShiftAt) >= shiftEveryMs) {
+          this.waveHistory.push(shiftPeak);
+          while (this.waveHistory.length > bars) this.waveHistory.shift();
+          shiftPeak = 0;
+          lastShiftAt += shiftEveryMs;
+        }
 
         ctx.clearRect(0, 0, w, h);
 
@@ -2399,9 +2415,15 @@ export class SteveChatApp {
     let stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch {
-      this.setRuntimeState("error", "Microphone permission denied or blocked by system settings.");
-      this.setAudioStatus("Audio: error (mic permission blocked)", "error");
+    } catch (err) {
+      const code = String(err?.name || "");
+      if (code === "NotReadableError" || code === "TrackStartError") {
+        this.setRuntimeState("error", "Microphone is busy in another app (e.g., screen recorder with mic). Stop that capture, then try again.");
+        this.setAudioStatus("Audio: error (mic in use by another app)", "error");
+      } else {
+        this.setRuntimeState("error", "Microphone permission denied or blocked by system settings.");
+        this.setAudioStatus("Audio: error (mic permission blocked)", "error");
+      }
       return;
     }
 
@@ -2469,7 +2491,7 @@ export class SteveChatApp {
             const merged = this.appendTranscriptionToBase(this.recordingBaseText, spokenText);
             this.els.messageInput.value = merged;
             this.autoSizeComposerInput();
-            this.setRuntimeState("idle", "Transcribed. Review/edit text in TYPE TO CHAT, then send.");
+            this.setRuntimeState("idle", "Transcribed. Review/edit text in Chat box, then send.");
             this.setAudioStatus("Audio: transcription complete", "ready");
           } else {
             // Keep pre-recording text unchanged when no speech is detected.
@@ -2546,7 +2568,7 @@ export class SteveChatApp {
         if (finalDraft) {
           this.els.messageInput.value = finalDraft;
           this.autoSizeComposerInput();
-          this.setRuntimeState("idle", "Transcribed. Review/edit text in TYPE TO CHAT, then send.");
+          this.setRuntimeState("idle", "Transcribed. Review/edit text in Chat box, then send.");
           this.setAudioStatus("Audio: transcription complete", "ready");
         } else if (this.state.liveMode) {
           this.setRuntimeState("idle", "Live runtime ready.");
