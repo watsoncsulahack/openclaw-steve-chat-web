@@ -1,8 +1,8 @@
-import { getDomRefs } from "./dom.js";
-import { IdenticonService } from "./services/identicon-service.js";
-import { GestureService } from "./services/gesture-service.js";
-import { RuntimeClient } from "./services/runtime-client.js";
-import { StorageService } from "./services/storage-service.js";
+import { getDomRefs } from "./dom.js?v=20260402g";
+import { IdenticonService } from "./services/identicon-service.js?v=20260402g";
+import { GestureService } from "./services/gesture-service.js?v=20260402g";
+import { RuntimeClient } from "./services/runtime-client.js?v=20260402g";
+import { StorageService } from "./services/storage-service.js?v=20260402g";
 
 const WIDE_QUERY = "(min-width: 700px)";
 const ARCHIVE_ICON_SVG = '<svg class="archive-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16"/><rect x="5" y="6" width="14" height="13" rx="2"/><path d="M9 11h6"/><path d="M9 14h6"/></svg>';
@@ -219,8 +219,16 @@ export class SteveChatApp {
     };
   }
 
+  ensureDocUiRefs() {
+    if (!this.els.docBanner) this.els.docBanner = document.getElementById("docBanner");
+    if (!this.els.docBannerText) this.els.docBannerText = document.getElementById("docBannerText");
+    if (!this.els.clearDocBtn) this.els.clearDocBtn = document.getElementById("clearDocBtn");
+    if (!this.els.docFileInput) this.els.docFileInput = document.getElementById("docFileInput");
+  }
+
   init() {
     this.ensureStateDefaults();
+    this.ensureDocUiRefs();
 
     if (!["regular", "qvac"].includes(this.state.backend)) {
       this.state.backend = "regular";
@@ -565,6 +573,8 @@ export class SteveChatApp {
   }
 
   bindEvents() {
+    this.ensureDocUiRefs();
+
     this.els.menuBtn.addEventListener("click", () => {
       if (this.isWide()) {
         this.setWideDrawerMode(this.state.wideDrawerMode === "open" ? "closed" : "open");
@@ -1501,6 +1511,7 @@ export class SteveChatApp {
   }
 
   renderDocBanner() {
+    this.ensureDocUiRefs();
     if (!this.els.docBanner || !this.els.docBannerText) return;
 
     const doc = this.loadedDoc;
@@ -1522,6 +1533,7 @@ export class SteveChatApp {
   }
 
   openDocumentPicker() {
+    this.ensureDocUiRefs();
     if (!this.els.docFileInput) {
       this.setRuntimeState("error", "Document picker is unavailable in this build.");
       return;
