@@ -104,6 +104,69 @@ export class RuntimeClient {
     throw new Error(`Runtime not ready on ${baseUrl}${suffix}`);
   }
 
+  async createEmbeddings({
+    baseUrl,
+    model,
+    input,
+    signal = null,
+    requestTimeoutMs = 45000,
+  }) {
+    const controller = new AbortController();
+    const timeout = Math.max(1500, Number(requestTimeoutMs) || 45000);
+    const timer = setTimeout(() => controller.abort(), timeout);
+    const onAbort = () => controller.abort();
+    signal?.addEventListener?.("abort", onAbort, { once: true });
+
+    const payload = {
+      model,
+      input,
+      encoding_format: "float",
+    };
+
+    let res;
+    try {
+      res = await fetch(`${baseUrl}/v1/embeddings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify(payload),
+      });
+    } catch (err) {
+      const abortedByCaller = Boolean(signal?.aborted);
+      if (err?.name === "AbortError" && !abortedByCaller) {
+        throw new Error(`Embeddings request timeout (${timeout}ms)`);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener?.("abort", onAbort);
+    }
+
+    if (!res.ok) throw await this.httpError(res);
+
+    const data = await res.json();
+    const rows = Array.isArray(data?.data) ? data.data : [];
+    const vectors = rows
+      .map((row) => {
+        const emb = Array.isArray(row?.embedding) ? row.embedding : [];
+        return emb
+          .map((n) => Number(n))
+          .filter((n) => Number.isFinite(n));
+      })
+      .filter((v) => v.length > 0);
+
+    if (!vectors.length) {
+      throw new Error("Embeddings endpoint returned no vectors");
+    }
+
+    return {
+      vectors,
+      model: String(data?.model || model || ""),
+      usage: data?.usage || null,
+      raw: data,
+    };
+  }
+
   buildRequestBody({
     model,
     messages,

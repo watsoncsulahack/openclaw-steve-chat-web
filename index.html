@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <title>Steve Chat (Prototype)</title>
-    <link rel="stylesheet" href="./style.css?v=20260402e" />
+    <link rel="stylesheet" href="./style.css?v=20260402f" />
   </head>
   <body>
     <div class="app-shell">
@@ -65,7 +65,14 @@
           <button id="clearReplyBtn" class="reply-banner-clear" title="Cancel reply">✕</button>
         </div>
 
+        <div id="docBanner" class="reply-banner doc-banner hidden">
+          <div id="docBannerText" class="reply-banner-text"></div>
+          <button id="clearDocBtn" class="reply-banner-clear" title="Unload document">✕</button>
+        </div>
+
         <div id="audioStatusBar" class="audio-status" aria-live="polite">Audio: idle</div>
+
+        <input id="docFileInput" class="doc-file-input" type="file" accept=".txt,.md,.markdown,.pdf,text/plain,text/markdown,application/pdf" />
 
         <footer class="composer">
           <button id="plusBtn" class="composer-icon">＋</button>
@@ -226,6 +233,6 @@
       </article>
     </template>
 
-    <script type="module" src="./src/main.js?v=20260402e"></script>
+    <script type="module" src="./src/main.js?v=20260402f"></script>
   </body>
 </html>

@@ -121,6 +121,8 @@ NGL_FILE="$RUN_DIR/${BACKEND_LABEL}-ngl-$PORT.txt"
 BIN_FILE="$RUN_DIR/${BACKEND_LABEL}-bin-$PORT.path"
 REASONING_FILE="$RUN_DIR/${BACKEND_LABEL}-reasoning-format-$PORT.txt"
 REASONING_BUDGET_FILE="$RUN_DIR/${BACKEND_LABEL}-reasoning-budget-$PORT.txt"
+EMBEDDINGS_FILE="$RUN_DIR/${BACKEND_LABEL}-embeddings-$PORT.txt"
+POOLING_FILE="$RUN_DIR/${BACKEND_LABEL}-pooling-$PORT.txt"
 LEGACY_PID_FILE=""
 LEGACY_MODEL_FILE=""
 
@@ -152,6 +154,7 @@ Env overrides:
   QVAC_LLAMA_BIN, QVAC_LLAMA_PORT, QVAC_N_GPU_LAYERS
   LLAMA_CPP_HOST, LLAMA_CPP_CTX, LLAMA_CPP_THREADS
   LLAMA_REASONING_ENABLE (default 1), LLAMA_REASONING_FORMAT (default deepseek-legacy), LLAMA_REASONING_BUDGET (default -1)
+  LLAMA_EMBEDDINGS_ENABLE (default qvac=1 regular=0), LLAMA_EMBEDDINGS_POOLING (default mean)
 
 Examples:
   $(basename "$0") list-models
@@ -273,7 +276,7 @@ is_running() {
 
 status() {
   local pid model source="pid-file"
-  local run_mode run_ngl run_bin run_reasoning run_reasoning_budget
+  local run_mode run_ngl run_bin run_reasoning run_reasoning_budget run_embeddings run_pooling
 
   if [[ -f "$PID_FILE" ]]; then
     pid="$(cat "$PID_FILE" || true)"
@@ -306,11 +309,15 @@ status() {
     run_bin="$(cat "$BIN_FILE" 2>/dev/null || true)"
     run_reasoning="$(cat "$REASONING_FILE" 2>/dev/null || true)"
     run_reasoning_budget="$(cat "$REASONING_BUDGET_FILE" 2>/dev/null || true)"
+    run_embeddings="$(cat "$EMBEDDINGS_FILE" 2>/dev/null || true)"
+    run_pooling="$(cat "$POOLING_FILE" 2>/dev/null || true)"
 
     echo "  mode:    ${run_mode:-$MODE}"
     echo "  ngl:     ${run_ngl:-$N_GPU_LAYERS}"
     [[ -n "$run_reasoning" ]] && echo "  reasoning_format: ${run_reasoning}"
     [[ -n "$run_reasoning_budget" ]] && echo "  reasoning_budget: ${run_reasoning_budget}"
+    [[ -n "$run_embeddings" ]] && echo "  embeddings: ${run_embeddings}"
+    [[ -n "$run_pooling" ]] && echo "  pooling: ${run_pooling}"
     [[ -n "$run_bin" ]] && echo "  bin:     $run_bin"
     [[ -n "$model" ]] && echo "  model:   $model"
     echo "  log:     $LOG_FILE"
@@ -357,13 +364,23 @@ start() {
   fi
 
   local reasoning_enable reasoning_format reasoning_budget bin_help
+  local embeddings_enable embedding_pooling
   local -a reasoning_args=()
   local -a alias_args=()
+  local -a embedding_args=()
   reasoning_enable="${LLAMA_REASONING_ENABLE:-1}"
   reasoning_format="${LLAMA_REASONING_FORMAT:-deepseek-legacy}"
   reasoning_budget="${LLAMA_REASONING_BUDGET:--1}"
+  if [[ "$BACKEND_LABEL" == "qvac" ]]; then
+    embeddings_enable="${LLAMA_EMBEDDINGS_ENABLE:-1}"
+  else
+    embeddings_enable="${LLAMA_EMBEDDINGS_ENABLE:-0}"
+  fi
+  embedding_pooling="${LLAMA_EMBEDDINGS_POOLING:-mean}"
   echo "disabled" > "$REASONING_FILE"
   echo "" > "$REASONING_BUDGET_FILE"
+  echo "disabled" > "$EMBEDDINGS_FILE"
+  echo "" > "$POOLING_FILE"
 
   if [[ "$reasoning_enable" != "0" ]]; then
     bin_help="$($BIN --help 2>/dev/null || true)"
@@ -385,6 +402,22 @@ start() {
   if [[ -z "$bin_help" ]]; then
     bin_help="$($BIN --help 2>/dev/null || true)"
   fi
+
+  if [[ "$embeddings_enable" != "0" ]]; then
+    if grep -Eq -- "--embedding, --embeddings|--embeddings" <<<"$bin_help"; then
+      embedding_args+=(--embeddings)
+      echo "enabled" > "$EMBEDDINGS_FILE"
+
+      if grep -q -- "--pooling" <<<"$bin_help"; then
+        embedding_args+=(--pooling "$embedding_pooling")
+        echo "$embedding_pooling" > "$POOLING_FILE"
+      fi
+    else
+      echo "unsupported" > "$EMBEDDINGS_FILE"
+      echo "[llama-cpp] NOTE: this server build does not expose --embeddings; continuing without embeddings endpoint."
+    fi
+  fi
+
   if grep -q -- "--alias" <<<"$bin_help"; then
     alias_args+=(--alias "$model_alias")
   fi
@@ -398,6 +431,8 @@ start() {
   echo "  ngl:     $N_GPU_LAYERS"
   [[ -s "$REASONING_FILE" ]] && echo "  reasoning_format: $(cat "$REASONING_FILE")"
   [[ -s "$REASONING_BUDGET_FILE" ]] && echo "  reasoning_budget: $(cat "$REASONING_BUDGET_FILE")"
+  [[ -s "$EMBEDDINGS_FILE" ]] && echo "  embeddings: $(cat "$EMBEDDINGS_FILE")"
+  [[ -s "$POOLING_FILE" ]] && echo "  pooling: $(cat "$POOLING_FILE")"
   echo "  model:   $model_path"
   [[ ${#alias_args[@]} -gt 0 ]] && echo "  alias:   $model_alias"
 
@@ -433,6 +468,7 @@ start() {
     --n-gpu-layers "$N_GPU_LAYERS" \
     "${DEVICE_ARGS[@]}" \
     "${reasoning_args[@]}" \
+    "${embedding_args[@]}" \
     --jinja \
     > "$LOG_FILE" 2>&1 &
 
@@ -460,7 +496,7 @@ start() {
 stop() {
   if ! is_running; then
     echo "[llama-cpp] already stopped ($BACKEND_LABEL)"
-    rm -f "$PID_FILE" "$MODE_FILE" "$NGL_FILE" "$BIN_FILE" "$REASONING_FILE" "$REASONING_BUDGET_FILE"
+    rm -f "$PID_FILE" "$MODE_FILE" "$NGL_FILE" "$BIN_FILE" "$REASONING_FILE" "$REASONING_BUDGET_FILE" "$EMBEDDINGS_FILE" "$POOLING_FILE"
     if [[ -n "$LEGACY_PID_FILE" ]]; then
       rm -f "$LEGACY_PID_FILE"
     fi
@@ -475,7 +511,7 @@ stop() {
 
   if [[ -z "$pid" ]]; then
     echo "[llama-cpp] could not resolve pid for backend=$BACKEND_LABEL (port $PORT)"
-    rm -f "$PID_FILE" "$MODE_FILE" "$NGL_FILE" "$BIN_FILE" "$REASONING_FILE" "$REASONING_BUDGET_FILE"
+    rm -f "$PID_FILE" "$MODE_FILE" "$NGL_FILE" "$BIN_FILE" "$REASONING_FILE" "$REASONING_BUDGET_FILE" "$EMBEDDINGS_FILE" "$POOLING_FILE"
     return 1
   fi
 
@@ -494,7 +530,7 @@ stop() {
     kill -9 "$pid" 2>/dev/null || true
   fi
 
-  rm -f "$PID_FILE" "$MODE_FILE" "$NGL_FILE" "$BIN_FILE" "$REASONING_FILE" "$REASONING_BUDGET_FILE"
+  rm -f "$PID_FILE" "$MODE_FILE" "$NGL_FILE" "$BIN_FILE" "$REASONING_FILE" "$REASONING_BUDGET_FILE" "$EMBEDDINGS_FILE" "$POOLING_FILE"
   if [[ -n "$LEGACY_PID_FILE" ]]; then
     rm -f "$LEGACY_PID_FILE"
   fi

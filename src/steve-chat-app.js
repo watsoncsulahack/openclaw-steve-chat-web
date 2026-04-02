@@ -49,6 +49,14 @@ const RUNTIME_STABILITY_PROFILE = {
   historyTokenBudget: 260,
 };
 
+const SIMPLE_RAG_PROFILE = {
+  chunkChars: 300,
+  overlapRatio: 0.15,
+  maxChunkCharsInPrompt: 320,
+  topK: 5,
+  maxFileBytes: 8 * 1024 * 1024,
+};
+
 export class SteveChatApp {
   constructor() {
     this.els = getDomRefs();
@@ -86,6 +94,9 @@ export class SteveChatApp {
     this.speechDraftText = "";
     this.pendingVoiceInputMeta = null;
     this.totalVoiceSpokenMs = Math.max(0, Number(localStorage.getItem("steve.totalVoiceSpokenMs") || 0));
+
+    this.loadedDoc = null;
+    this.pdfParserModule = null;
 
     this.state = this.storage.load(this.createInitialState());
   }
@@ -602,6 +613,7 @@ export class SteveChatApp {
     this.els.archivesBtn.addEventListener("click", () => this.toggleArchivedView());
     this.els.drawerCompactBtn.addEventListener("click", () => this.toggleSidebarCollapsed());
     this.els.clearReplyBtn.addEventListener("click", () => this.clearReplyTarget());
+    this.els.clearDocBtn?.addEventListener("click", () => this.clearLoadedDocument());
     this.els.themeToggleBtn.addEventListener("click", () => this.toggleTheme());
     this.els.resetPowerStatsBtn?.addEventListener("click", () => this.resetPowerStats());
 
@@ -668,7 +680,13 @@ export class SteveChatApp {
         this.toggleRecordingPause();
         return;
       }
-      this.els.modeHint.textContent = "Attachment/actions menu hook (non-modal).";
+      this.openDocumentPicker();
+    });
+
+    this.els.docFileInput?.addEventListener("change", (e) => {
+      const file = e.target?.files?.[0] || null;
+      this.handleDocumentSelection(file);
+      if (this.els.docFileInput) this.els.docFileInput.value = "";
     });
 
     this.els.micBtn.addEventListener("click", () => {
@@ -1129,6 +1147,7 @@ export class SteveChatApp {
     this.renderSidebarRail();
     this.renderMessages();
     this.renderReplyBanner();
+    this.renderDocBanner();
     this.renderModels();
     this.syncModelLabel();
     this.renderBackendUi();
@@ -1468,6 +1487,7 @@ export class SteveChatApp {
   }
 
   renderReplyBanner() {
+    this.renderDocBanner();
     const t = this.state.replyTarget;
     if (!t || t.chatId !== this.state.activeChatId) {
       this.els.replyBanner.classList.add("hidden");
@@ -1478,6 +1498,334 @@ export class SteveChatApp {
     this.els.replyBanner.classList.remove("hidden");
     const snippet = (t.text || "").replace(/\s+/g, " ").slice(0, 80);
     this.els.replyBannerText.textContent = `Replying to ${t.role}: ${snippet}`;
+  }
+
+  renderDocBanner() {
+    if (!this.els.docBanner || !this.els.docBannerText) return;
+
+    const doc = this.loadedDoc;
+    if (!doc || doc.status !== "ready") {
+      this.els.docBanner.classList.add("hidden");
+      this.els.docBannerText.textContent = "";
+      return;
+    }
+
+    const fileName = String(doc.name || "document");
+    const chunks = Math.max(0, Number(doc.chunkCount || 0));
+    const sourceChars = Math.max(0, Number(doc.sourceChars || 0));
+    const scope = doc.chatId && doc.chatId !== this.state.activeChatId
+      ? " (loaded for another chat)"
+      : "";
+
+    this.els.docBanner.classList.remove("hidden");
+    this.els.docBannerText.textContent = `Document loaded: ${fileName} • ${chunks} chunks • ${sourceChars} chars${scope}`;
+  }
+
+  openDocumentPicker() {
+    if (!this.els.docFileInput) {
+      this.setRuntimeState("error", "Document picker is unavailable in this build.");
+      return;
+    }
+
+    this.els.docFileInput.click();
+  }
+
+  clearLoadedDocument({ silent = false } = {}) {
+    this.loadedDoc = null;
+    this.renderDocBanner();
+    if (!silent) this.setRuntimeState("idle", "Document context cleared.");
+  }
+
+  async handleDocumentSelection(file) {
+    if (!file) return;
+
+    const maxFileBytes = SIMPLE_RAG_PROFILE.maxFileBytes;
+    if (Number(file.size || 0) > maxFileBytes) {
+      const mb = (maxFileBytes / (1024 * 1024)).toFixed(0);
+      this.setRuntimeState("error", `File is too large for MVP in-memory mode (>${mb} MB).`);
+      return;
+    }
+
+    const name = String(file.name || "document").trim() || "document";
+    this.loadedDoc = {
+      status: "processing",
+      name,
+      chatId: this.state.activeChatId,
+      chunkCount: 0,
+      sourceChars: 0,
+      chunks: [],
+    };
+    this.renderDocBanner();
+    this.setRuntimeState("working", `Loading document: ${name}`);
+
+    try {
+      const text = await this.extractTextFromDocument(file);
+      const chunks = this.chunkDocumentText(text);
+      if (!chunks.length) {
+        throw new Error("No readable text found in document");
+      }
+
+      const embedded = await this.embedDocumentChunks(chunks);
+      this.loadedDoc = {
+        status: "ready",
+        id: `doc-${Date.now().toString(36)}`,
+        name,
+        mimeType: String(file.type || ""),
+        sizeBytes: Math.max(0, Number(file.size || 0)),
+        chatId: this.state.activeChatId,
+        sourceChars: text.length,
+        chunkCount: embedded.length,
+        chunks: embedded,
+        embeddingModel: this.state.selectedModel,
+        loadedAt: Date.now(),
+      };
+
+      this.renderDocBanner();
+      this.setRuntimeState("ok", `Document ready (${embedded.length} chunks). Ask a question about it.`);
+    } catch (err) {
+      this.loadedDoc = null;
+      this.renderDocBanner();
+      this.setRuntimeState("error", `Document load failed: ${String(err?.message || err)}`);
+    }
+  }
+
+  async extractTextFromDocument(file) {
+    const name = String(file?.name || "").toLowerCase();
+    const mime = String(file?.type || "").toLowerCase();
+
+    if (name.endsWith(".txt") || name.endsWith(".md") || name.endsWith(".markdown") || mime.startsWith("text/")) {
+      const raw = await file.text();
+      const clean = String(raw || "").replace(/\r\n?/g, "\n").trim();
+      if (!clean) throw new Error("Text file is empty");
+      return clean;
+    }
+
+    if (name.endsWith(".pdf") || mime.includes("pdf")) {
+      return this.extractTextFromPdf(file);
+    }
+
+    throw new Error("Unsupported file type. Use TXT, MD, or PDF.");
+  }
+
+  async loadPdfParserModule() {
+    if (this.pdfParserModule) return this.pdfParserModule;
+
+    const mod = await import("https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.min.mjs");
+    if (mod?.GlobalWorkerOptions) {
+      mod.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs";
+    }
+
+    this.pdfParserModule = mod;
+    return mod;
+  }
+
+  async extractTextFromPdf(file) {
+    let pdfjs = null;
+    try {
+      pdfjs = await this.loadPdfParserModule();
+    } catch {
+      throw new Error("PDF parser failed to load (network blocked or unavailable).");
+    }
+
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const loadingTask = pdfjs.getDocument({ data: bytes });
+    const doc = await loadingTask.promise;
+
+    const pages = [];
+    for (let pageNo = 1; pageNo <= doc.numPages; pageNo += 1) {
+      const page = await doc.getPage(pageNo);
+      const content = await page.getTextContent();
+      const text = (content?.items || [])
+        .map((it) => String(it?.str || "").trim())
+        .filter(Boolean)
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (text) pages.push(text);
+    }
+
+    await loadingTask.destroy?.();
+
+    const joined = pages.join("\n\n").trim();
+    if (!joined) {
+      throw new Error("No extractable text found in PDF (scanned/OCR PDF not supported yet).");
+    }
+
+    return joined;
+  }
+
+  chunkDocumentText(rawText = "") {
+    const text = String(rawText || "").replace(/\r\n?/g, "\n").trim();
+    if (!text) return [];
+
+    const maxChars = Math.max(180, Number(SIMPLE_RAG_PROFILE.chunkChars) || 300);
+    const overlap = Math.max(12, Math.round(maxChars * (Number(SIMPLE_RAG_PROFILE.overlapRatio) || 0.15)));
+
+    const blocks = text
+      .split(/\n\s*\n+/)
+      .map((b) => b.replace(/\s+/g, " ").trim())
+      .filter(Boolean);
+
+    const chunks = [];
+    let seq = 0;
+
+    const pushChunk = (part, blockIndex, sectionLabel) => {
+      const clean = String(part || "").replace(/\s+/g, " ").trim();
+      if (!clean) return;
+      chunks.push({
+        id: `c${seq + 1}`,
+        seq,
+        blockIndex,
+        section: sectionLabel,
+        text: clean,
+      });
+      seq += 1;
+    };
+
+    blocks.forEach((block, blockIndex) => {
+      const sectionLabel = block.split(/\s+/).slice(0, 16).join(" ").slice(0, 80) || `Section ${blockIndex + 1}`;
+      if (block.length <= maxChars) {
+        pushChunk(block, blockIndex, sectionLabel);
+        return;
+      }
+
+      let start = 0;
+      while (start < block.length) {
+        const end = Math.min(block.length, start + maxChars);
+        const part = block.slice(start, end);
+        pushChunk(part, blockIndex, sectionLabel);
+        if (end >= block.length) break;
+        start = Math.max(start + 1, end - overlap);
+      }
+    });
+
+    return chunks;
+  }
+
+  async embedDocumentChunks(chunks = []) {
+    const list = Array.isArray(chunks) ? chunks : [];
+    if (!list.length) return [];
+
+    const model = this.state.selectedModel || this.state.models?.[0]?.id || "";
+    if (!model) {
+      throw new Error("No active model selected for embeddings.");
+    }
+
+    const batchSize = 24;
+    const out = [];
+
+    for (let i = 0; i < list.length; i += batchSize) {
+      const batch = list.slice(i, i + batchSize);
+      const result = await this.runtimeClient.createEmbeddings({
+        baseUrl: this.state.baseUrl,
+        model,
+        input: batch.map((c) => c.text),
+        requestTimeoutMs: 90000,
+      });
+
+      const vectors = result.vectors || [];
+      if (vectors.length !== batch.length) {
+        throw new Error(`Embeddings batch mismatch (${vectors.length}/${batch.length}).`);
+      }
+
+      for (let j = 0; j < batch.length; j += 1) {
+        const vec = vectors[j];
+        const norm = this.vectorNorm(vec);
+        if (!norm) continue;
+
+        out.push({
+          ...batch[j],
+          embedding: vec,
+          embeddingNorm: norm,
+        });
+      }
+    }
+
+    if (!out.length) {
+      throw new Error("Embeddings endpoint returned empty vectors.");
+    }
+
+    return out;
+  }
+
+  vectorNorm(vec = []) {
+    let sum = 0;
+    for (let i = 0; i < vec.length; i += 1) {
+      const n = Number(vec[i]);
+      if (!Number.isFinite(n)) continue;
+      sum += (n * n);
+    }
+    return sum > 0 ? Math.sqrt(sum) : 0;
+  }
+
+  cosineSimilarity(a = [], b = [], normA = null, normB = null) {
+    if (!Array.isArray(a) || !Array.isArray(b) || !a.length || !b.length) return 0;
+    const len = Math.min(a.length, b.length);
+    let dot = 0;
+    for (let i = 0; i < len; i += 1) {
+      const av = Number(a[i]);
+      const bv = Number(b[i]);
+      if (!Number.isFinite(av) || !Number.isFinite(bv)) continue;
+      dot += av * bv;
+    }
+
+    const na = Number.isFinite(normA) ? normA : this.vectorNorm(a);
+    const nb = Number.isFinite(normB) ? normB : this.vectorNorm(b);
+    if (!na || !nb) return 0;
+    return dot / (na * nb);
+  }
+
+  async buildDocumentAwareMessages(messages, userQuery, signal = null) {
+    const doc = this.loadedDoc;
+    if (!doc || doc.status !== "ready") return messages;
+    if (doc.chatId && doc.chatId !== this.state.activeChatId) return messages;
+
+    const query = String(userQuery || "").trim();
+    if (!query) return messages;
+
+    const queryEmb = await this.runtimeClient.createEmbeddings({
+      baseUrl: this.state.baseUrl,
+      model: doc.embeddingModel || this.state.selectedModel,
+      input: query,
+      signal,
+      requestTimeoutMs: 30000,
+    });
+
+    const qVec = queryEmb.vectors?.[0];
+    const qNorm = this.vectorNorm(qVec);
+    if (!qVec || !qNorm) return messages;
+
+    const ranked = (doc.chunks || [])
+      .map((chunk) => ({
+        chunk,
+        score: this.cosineSimilarity(qVec, chunk.embedding, qNorm, chunk.embeddingNorm),
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, Math.max(1, Number(SIMPLE_RAG_PROFILE.topK) || 5))
+      .filter((hit) => Number.isFinite(hit.score));
+
+    if (!ranked.length) return messages;
+
+    const maxCharsInPrompt = Math.max(120, Number(SIMPLE_RAG_PROFILE.maxChunkCharsInPrompt) || 320);
+    const contextLines = ranked.map((hit, idx) => {
+      const clipped = String(hit.chunk?.text || "").slice(0, maxCharsInPrompt).trim();
+      const section = String(hit.chunk?.section || `Section ${idx + 1}`);
+      return `[source ${idx + 1} | sim=${hit.score.toFixed(3)} | ${section}] ${clipped}`;
+    });
+
+    const docSystem = [
+      `Document loaded: ${doc.name}`,
+      "Use retrieved snippets below as context for this response.",
+      "If the answer is not present in snippets, say you couldn't find it in the loaded document.",
+      "When using document evidence, cite source tags like [source 2].",
+      "",
+      "Retrieved snippets:",
+      ...contextLines,
+    ].join("\n");
+
+    const patched = Array.isArray(messages) ? [...messages] : [];
+    patched.unshift({ role: "system", content: docSystem });
+    return patched;
   }
 
   escapeHtml(raw) {
@@ -2709,6 +3057,7 @@ export class SteveChatApp {
       localStorage.setItem("steve.model", this.state.selectedModel);
       this.syncModelLabel();
       this.renderModels();
+      this.clearLoadedDocument({ silent: true });
       this.resetActiveChatForModelSwitch(profile.name);
       this.setRuntimeState("ok", `Applied ${profile.name} on ${this.getBackendLabel()} with fresh context.`);
       this.schedulePersist();
@@ -3484,13 +3833,15 @@ export class SteveChatApp {
 
     const initialModelName = this.shortName(this.state.selectedModel || "model");
     const assistantIndex = this.appendMessage("steve", "", { pending: true, modelName: initialModelName }, chatId);
-    const messages = this.applyTemplateToMessages(this.buildRuntimeMessages(chatId));
+    let messages = this.applyTemplateToMessages(this.buildRuntimeMessages(chatId));
     const controller = this.startInferenceController();
     const signal = controller.signal;
     let streamedText = "";
     let streamedReasoning = "";
 
     try {
+      messages = await this.buildDocumentAwareMessages(messages, text, signal);
+
       let readyModels = [];
       try {
         readyModels = await this.runtimeClient.fetchModelsWithRetry(this.state.baseUrl, {
@@ -3651,9 +4002,10 @@ export class SteveChatApp {
         if (this.isLikelyCorruptedAssistantOutput(display.text)) {
           this.setRuntimeState("working", "Response looked unstable. Retrying once with clean context...");
           try {
-            const rescueMessages = this.applyTemplateToMessages([
+            let rescueMessages = this.applyTemplateToMessages([
               { role: "user", content: String(text || "").trim() },
             ]);
+            rescueMessages = await this.buildDocumentAwareMessages(rescueMessages, text, signal);
             const rescue = await this.withRuntimeRetry(() => this.runtimeClient.completeOnce({
               baseUrl: this.state.baseUrl,
               model: this.state.selectedModel,
@@ -3759,9 +4111,10 @@ export class SteveChatApp {
       if (this.isLikelyCorruptedAssistantOutput(display.text)) {
         this.setRuntimeState("working", "Response looked unstable. Retrying once with clean context...");
         try {
-          const rescueMessages = this.applyTemplateToMessages([
+          let rescueMessages = this.applyTemplateToMessages([
             { role: "user", content: String(text || "").trim() },
           ]);
+          rescueMessages = await this.buildDocumentAwareMessages(rescueMessages, text, signal);
           const rescue = await this.withRuntimeRetry(() => this.runtimeClient.completeOnce({
             baseUrl: this.state.baseUrl,
             model: this.state.selectedModel,

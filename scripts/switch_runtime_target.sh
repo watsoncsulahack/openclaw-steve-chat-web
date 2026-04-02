@@ -89,28 +89,33 @@ case "$TARGET" in
   reg-prebuilt)
     need_bin "regular prebuilt" "$REG_PREBUILT_BIN"
     env LLAMA_CPP_BIN="$REG_PREBUILT_BIN" LLAMA_CPP_PORT=18080 \
+      LLAMA_EMBEDDINGS_ENABLE="${LLAMA_EMBEDDINGS_ENABLE:-1}" LLAMA_EMBEDDINGS_POOLING="${LLAMA_EMBEDDINGS_POOLING:-mean}" \
       bash "$LAUNCHER" start --backend regular --mode gpu --model "$MODEL_PATH_OVERRIDE"
     ;;
   reg-cpu)
     need_bin "regular cpu" "$REG_CPU_BIN"
     env LLAMA_CPP_BIN="$REG_CPU_BIN" LLAMA_CPP_PORT=18082 \
+      LLAMA_EMBEDDINGS_ENABLE="${LLAMA_EMBEDDINGS_ENABLE:-1}" LLAMA_EMBEDDINGS_POOLING="${LLAMA_EMBEDDINGS_POOLING:-mean}" \
       bash "$LAUNCHER" start --backend regular --mode cpu --model "$MODEL_PATH_OVERRIDE"
     ;;
   reg-vulkan)
     need_bin "regular vulkan" "$REG_VK_BIN"
     env LLAMA_CPP_BIN="$REG_VK_BIN" LLAMA_CPP_PORT=18083 \
+      LLAMA_EMBEDDINGS_ENABLE="${LLAMA_EMBEDDINGS_ENABLE:-1}" LLAMA_EMBEDDINGS_POOLING="${LLAMA_EMBEDDINGS_POOLING:-mean}" \
       bash "$LAUNCHER" start --backend regular --mode gpu --model "$MODEL_PATH_OVERRIDE"
     ;;
   qvac-cpu)
     need_bin "qvac cpu" "$QVAC_CPU_BIN"
     env QVAC_LLAMA_BIN="$QVAC_CPU_BIN" QVAC_LLAMA_PORT=18081 \
       QVAC_N_GPU_LAYERS="${QVAC_N_GPU_LAYERS:-0}" LLAMA_CPP_CTX="${LLAMA_CPP_CTX:-2048}" LLAMA_CPP_THREADS="${LLAMA_CPP_THREADS:-3}" \
+      LLAMA_EMBEDDINGS_ENABLE="${LLAMA_EMBEDDINGS_ENABLE:-1}" LLAMA_EMBEDDINGS_POOLING="${LLAMA_EMBEDDINGS_POOLING:-mean}" \
       bash "$LAUNCHER" start --backend qvac --mode cpu --model "$MODEL_PATH_OVERRIDE"
     ;;
   qvac-vulkan)
     need_bin "qvac vulkan" "$QVAC_VK_BIN"
     env QVAC_LLAMA_BIN="$QVAC_VK_BIN" QVAC_LLAMA_PORT=18084 \
       QVAC_N_GPU_LAYERS="${QVAC_N_GPU_LAYERS:-72}" LLAMA_CPP_CTX="${LLAMA_CPP_CTX:-2048}" LLAMA_CPP_THREADS="${LLAMA_CPP_THREADS:-3}" \
+      LLAMA_EMBEDDINGS_ENABLE="${LLAMA_EMBEDDINGS_ENABLE:-1}" LLAMA_EMBEDDINGS_POOLING="${LLAMA_EMBEDDINGS_POOLING:-mean}" \
       bash "$LAUNCHER" start --backend qvac --mode gpu --model "$MODEL_PATH_OVERRIDE"
     ;;
   *)

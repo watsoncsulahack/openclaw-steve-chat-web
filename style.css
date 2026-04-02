@@ -396,6 +396,29 @@ body.theme-light {
   height: 28px;
 }
 
+.doc-banner {
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(50, 84, 212, 0.16), rgba(33, 53, 132, 0.16));
+}
+
+.doc-banner .reply-banner-text {
+  color: #d9e6ff;
+  font-weight: 600;
+}
+
+.doc-file-input {
+  display: none;
+}
+
+body.theme-light .doc-banner {
+  background: linear-gradient(180deg, rgba(67, 107, 255, 0.14), rgba(67, 107, 255, 0.08));
+}
+
+body.theme-light .doc-banner .reply-banner-text {
+  color: #29419c;
+}
+
 .composer {
   display: flex;
   align-items: center;
