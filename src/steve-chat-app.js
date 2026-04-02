@@ -2213,8 +2213,10 @@ export class SteveChatApp {
       this.audioDataArray = new Float32Array(this.audioAnalyser.fftSize);
       source.connect(this.audioAnalyser);
 
-      this.waveHistory = [];
       const bars = 56;
+      // Keep a fixed-width history so first visible activity appears at the right edge
+      // and scrolls left immediately (ChatGPT/native-recorder style).
+      this.waveHistory = Array.from({ length: bars }, () => 0);
       const shiftEveryMs = Math.max(40, Number(this.waveScrollIntervalMs) || 110);
       let lastShiftAt = performance.now();
       let shiftPeak = 0;
