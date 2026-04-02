@@ -54,6 +54,7 @@ export class SteveChatApp {
     this.els = getDomRefs();
     this.defaultMicInner = this.els?.micBtn?.innerHTML || "";
     this.defaultSendInner = this.els?.sendBtn?.innerHTML || "";
+    this.defaultPlusInner = this.els?.plusBtn?.innerHTML || "";
     this.audioProcessing = false;
     this.sttAbortController = null;
     this.audioContext = null;
@@ -647,11 +648,15 @@ export class SteveChatApp {
     });
 
     this.els.plusBtn.addEventListener("click", () => {
+      if (this.isRecordingActive() || this.isRecordingPaused()) {
+        this.toggleRecordingPause();
+        return;
+      }
       this.els.modeHint.textContent = "Attachment/actions menu hook (non-modal).";
     });
 
     this.els.micBtn.addEventListener("click", () => {
-      if (this.isRecordingActive() || this.audioProcessing) {
+      if (this.isRecordingActive() || this.isRecordingPaused() || this.audioProcessing) {
         this.cancelRecordingNoTranscription();
         return;
       }
@@ -2062,18 +2067,30 @@ export class SteveChatApp {
     this.els.messageInput.style.display = active ? "none" : "";
 
     if (active) {
+      const paused = this.isRecordingPaused();
       this.els.micBtn.classList.add("recording-cancel");
       this.els.sendBtn.classList.add("recording-commit");
-      this.els.micBtn.innerHTML = '<span class="stop-glyph">✕</span>';
+      this.els.plusBtn.classList.add("recording-pause");
+      this.els.plusBtn.classList.toggle("paused", paused);
+      this.els.composer?.classList.toggle("recording-paused", paused);
+
+      this.els.plusBtn.innerHTML = `<span class="pause-glyph">${paused ? "▶" : "⏸"}</span>`;
+      this.els.plusBtn.title = paused ? "Resume recording" : "Pause recording";
+
+      this.els.micBtn.innerHTML = '<span class="stop-glyph">■</span>';
       this.els.sendBtn.innerHTML = '<span class="stop-glyph">✓</span>';
-      this.els.micBtn.title = "Cancel recording";
+      this.els.micBtn.title = "Stop and discard recording";
       this.els.sendBtn.title = "Use recording and transcribe";
-      this.setAudioStatus("Audio: recording", "recording");
+      this.setAudioStatus(paused ? "Audio: paused" : "Audio: recording", paused ? "ready" : "recording");
     } else {
       this.els.micBtn.classList.remove("recording-cancel");
       this.els.sendBtn.classList.remove("recording-commit");
+      this.els.plusBtn.classList.remove("recording-pause", "paused");
+      this.els.composer?.classList.remove("recording-paused");
+      if (this.defaultPlusInner) this.els.plusBtn.innerHTML = this.defaultPlusInner;
       if (this.defaultMicInner) this.els.micBtn.innerHTML = this.defaultMicInner;
       if (this.defaultSendInner) this.els.sendBtn.innerHTML = this.defaultSendInner;
+      this.els.plusBtn.title = "Add";
       this.els.micBtn.title = "Toggle microphone";
       this.els.sendBtn.title = "Send message";
       this.setAudioStatus("Audio: idle", "");
@@ -2082,6 +2099,44 @@ export class SteveChatApp {
 
   isRecordingActive() {
     return Boolean(this.mediaRecorder && this.mediaRecorder.state === "recording");
+  }
+
+  isRecordingPaused() {
+    return Boolean(this.mediaRecorder && this.mediaRecorder.state === "paused");
+  }
+
+  toggleRecordingPause() {
+    if (!this.mediaRecorder) return;
+
+    if (this.mediaRecorder.state === "recording") {
+      try { this.mediaRecorder.pause(); } catch { /* ignore */ }
+      if (this.recognition) {
+        try { this.recognition.stop(); } catch { /* ignore */ }
+        this.recognition = null;
+        this.pendingRecorderOnlyTranscription = true;
+      }
+      this.stopAudioMeter();
+      this.els.composer?.classList.add("recording-paused");
+      this.els.plusBtn.classList.add("paused");
+      this.els.plusBtn.innerHTML = '<span class="pause-glyph">▶</span>';
+      this.els.plusBtn.title = "Resume recording";
+      const label = this.els.recordingWave?.querySelector?.(".wave-label");
+      if (label) label.textContent = "Paused";
+      this.setRuntimeState("idle", "Recording paused.");
+      this.setAudioStatus("Audio: paused", "ready");
+      return;
+    }
+
+    if (this.mediaRecorder.state === "paused") {
+      try { this.mediaRecorder.resume(); } catch { /* ignore */ }
+      this.els.composer?.classList.remove("recording-paused");
+      this.els.plusBtn.classList.remove("paused");
+      this.els.plusBtn.innerHTML = '<span class="pause-glyph">⏸</span>';
+      this.els.plusBtn.title = "Pause recording";
+      if (this.mediaStream) this.startAudioMeter(this.mediaStream);
+      this.setRuntimeState("working", "Recording audio…");
+      this.setAudioStatus("Audio: recording", "recording");
+    }
   }
 
   startAudioMeter(stream) {
@@ -2107,7 +2162,11 @@ export class SteveChatApp {
 
       const draw = () => {
         const waveHost = this.els.recordingWave;
-        if (!waveHost || waveHost.classList.contains("hidden") || !this.audioAnalyser) return;
+        if (!waveHost || !this.audioAnalyser) return;
+        if (waveHost.classList.contains("hidden")) {
+          this.audioMeterRaf = requestAnimationFrame(draw);
+          return;
+        }
 
         const ratio = window.devicePixelRatio || 1;
         const rect = canvas.getBoundingClientRect();
@@ -2136,12 +2195,20 @@ export class SteveChatApp {
 
         ctx.clearRect(0, 0, w, h);
 
-        // Live waveform bars (time-domain buckets).
-        const bars = 32;
-        const gap = Math.max(1, Math.floor(w / 320));
-        const totalGap = gap * (bars - 1);
-        const barW = Math.max(2, Math.floor((w - totalGap) / bars));
+        // Baseline + peak-style vertical bars (concept style).
+        const midY = Math.floor(h / 2);
+        ctx.setLineDash([6 * ratio, 5 * ratio]);
+        ctx.strokeStyle = "rgba(88, 255, 154, 0.75)";
+        ctx.lineWidth = Math.max(1, ratio);
+        ctx.beginPath();
+        ctx.moveTo(0, midY);
+        ctx.lineTo(w, midY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        const bars = 40;
         const step = Math.max(1, Math.floor(this.audioDataArray.length / bars));
+        const spacing = w / bars;
 
         for (let i = 0; i < bars; i += 1) {
           const start = i * step;
@@ -2152,24 +2219,28 @@ export class SteveChatApp {
             if (av > local) local = av;
           }
 
-          const amp = Math.min(1, local * 1.35);
-          const minH = h * 0.12;
-          const barH = Math.max(minH, amp * h * 0.92);
-          const x = i * (barW + gap);
-          const y = (h - barH) / 2;
+          const amp = Math.min(1, local * 1.5);
+          if (amp < 0.035) continue;
 
-          let color = "#7de3a0";
-          if (amp > 0.78) color = "#ff7a7a";
-          else if (amp > 0.5) color = "#ffd56f";
+          const x = Math.floor(i * spacing + spacing * 0.5);
+          const barH = Math.max(2 * ratio, amp * h * 0.46);
 
-          ctx.fillStyle = color;
-          ctx.fillRect(x, y, barW, barH);
+          let color = "#58ff9a";
+          if (amp > 0.78) color = "#ff5f5f";
+          else if (amp > 0.5) color = "#ffd65e";
+
+          ctx.strokeStyle = color;
+          ctx.lineWidth = Math.max(1.2 * ratio, spacing * 0.2);
+          ctx.beginPath();
+          ctx.moveTo(x, midY - barH);
+          ctx.lineTo(x, midY + barH);
+          ctx.stroke();
         }
 
-        // Peak meter indicator line.
-        const meterY = Math.max(1, Math.floor(h * 0.1));
+        // Peak hold indicator at top edge.
+        const meterY = Math.max(1, Math.floor(h * 0.12));
         const meterW = Math.max(2, Math.floor(w * Math.min(1, peakHold)));
-        ctx.fillStyle = peakHold > 0.78 ? "#ff6f6f" : (peakHold > 0.5 ? "#ffd56f" : "#7de3a0");
+        ctx.fillStyle = peakHold > 0.78 ? "#ff6f6f" : (peakHold > 0.5 ? "#ffd56f" : "#72f5a8");
         ctx.fillRect(0, meterY, meterW, Math.max(2, Math.floor(h * 0.08)));
 
         if (label) {
@@ -2200,7 +2271,7 @@ export class SteveChatApp {
   }
 
   commitRecordingWithTranscription() {
-    if (!this.isRecordingActive()) return;
+    if (!this.isRecordingActive() && !this.isRecordingPaused()) return;
     this.pendingRecorderOnlyTranscription = true;
     this.cancelledRecording = false;
     this.audioProcessing = true;
@@ -2225,7 +2296,7 @@ export class SteveChatApp {
       return;
     }
 
-    if (!this.isRecordingActive()) return;
+    if (!this.isRecordingActive() && !this.isRecordingPaused()) return;
     this.pendingRecorderOnlyTranscription = false;
     this.cancelledRecording = true;
     if (this.recognition) {
@@ -2266,8 +2337,8 @@ export class SteveChatApp {
   async toggleSpeechInput() {
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-    // Guard: recording stop is handled by explicit X (cancel) and ✓ (commit) actions.
-    if (this.isRecordingActive()) {
+    // Guard: recording stop/pause/commit are handled by dedicated controls.
+    if (this.isRecordingActive() || this.isRecordingPaused()) {
       return;
     }
 
@@ -2291,7 +2362,6 @@ export class SteveChatApp {
     this.mediaStream = stream;
     this.recordedChunks = [];
     this.speechFinalText = "";
-    this.startAudioMeter(stream);
 
     let recorder;
     try {
@@ -2308,6 +2378,15 @@ export class SteveChatApp {
 
     recorder.ondataavailable = (ev) => {
       if (ev?.data && ev.data.size > 0) this.recordedChunks.push(ev.data);
+    };
+
+    recorder.onpause = () => {
+      this.setRecordingUi(true);
+    };
+
+    recorder.onresume = () => {
+      this.setRecordingUi(true);
+      if (this.mediaStream) this.startAudioMeter(this.mediaStream);
     };
 
     recorder.onstop = async () => {
@@ -2403,8 +2482,9 @@ export class SteveChatApp {
       };
 
       recognizer.onend = () => {
-        // If commit-to-transcribe is in progress, keep recorder flow as source of truth.
-        if (this.audioProcessing || this.pendingRecorderOnlyTranscription) {
+        // If recording is still active/paused (or commit transcribe is active),
+        // keep recorder flow as source of truth and do not collapse recording UI.
+        if (this.audioProcessing || this.pendingRecorderOnlyTranscription || this.isRecordingActive() || this.isRecordingPaused()) {
           this.recognition = null;
           return;
         }
@@ -2436,6 +2516,7 @@ export class SteveChatApp {
 
     this.recordingStartedAt = Date.now();
     this.setRecordingUi(true);
+    this.startAudioMeter(stream);
     recorder.start(250);
   }
 
