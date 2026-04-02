@@ -1031,13 +1031,16 @@ body.theme-light .bubble-reply {
 
 .composer-icon.recording-pause {
   background: #1d2b63;
-  border-color: #5f79dd;
-  color: #dfe8ff;
+  border-color: #f2a23a;
+  color: #ffd79b;
+  box-shadow: 0 0 0 2px rgba(242, 162, 58, 0.35);
 }
 
 .composer-icon.recording-pause.paused {
-  background: #31503a;
-  border-color: #66c58d;
+  background: #f2a23a;
+  border-color: #f2a23a;
+  color: #1f2b63;
+  box-shadow: 0 0 0 2px rgba(242, 162, 58, 0.45);
 }
 
 .pause-glyph {

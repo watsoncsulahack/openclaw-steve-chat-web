@@ -84,6 +84,8 @@ export class SteveChatApp {
     this.waveScrollIntervalMs = 110;
     this.recordingBaseText = "";
     this.speechDraftText = "";
+    this.pendingVoiceInputMeta = null;
+    this.totalVoiceSpokenMs = Math.max(0, Number(localStorage.getItem("steve.totalVoiceSpokenMs") || 0));
 
     this.state = this.storage.load(this.createInitialState());
   }
@@ -2493,6 +2495,18 @@ export class SteveChatApp {
           }
 
           if (spokenText) {
+            const clipMs = this.getRecordingElapsedMs();
+            if (clipMs > 0) {
+              this.totalVoiceSpokenMs += clipMs;
+              localStorage.setItem("steve.totalVoiceSpokenMs", String(this.totalVoiceSpokenMs));
+            }
+
+            if (!this.pendingVoiceInputMeta) {
+              this.pendingVoiceInputMeta = { clipMs: 0, clips: 0 };
+            }
+            this.pendingVoiceInputMeta.clipMs += Math.max(0, clipMs);
+            this.pendingVoiceInputMeta.clips += 1;
+
             const merged = this.appendTranscriptionToBase(this.recordingBaseText, spokenText);
             this.els.messageInput.value = merged;
             this.autoSizeComposerInput();
@@ -3272,9 +3286,22 @@ export class SteveChatApp {
       .map((m) => {
         const role = m.role === "steve" ? "assistant" : "user";
         const rawText = String(m.text || "").trim();
-        const content = role === "assistant"
-          ? this.sanitizeAssistantForRuntime(rawText)
-          : rawText;
+
+        let content = "";
+        if (role === "assistant") {
+          content = this.sanitizeAssistantForRuntime(rawText);
+        } else {
+          content = rawText;
+          const vm = m?.voiceMeta;
+          if (vm && Number(vm.clipMs) > 0) {
+            const clipSec = Math.max(1, Math.round(Number(vm.clipMs) / 1000));
+            const clips = Math.max(1, Number(vm.clips || 1));
+            const sessionSec = Math.max(0, Math.round(Number(vm.sessionMs || 0) / 1000));
+            const voiceHeader = `[VOICE_INPUT used=true clips=${clips} clip_seconds=${clipSec} session_voice_seconds=${sessionSec}; assistant_acknowledge_voice=true]`;
+            content = `${voiceHeader}\n${content}`;
+          }
+        }
+
         return { role, content };
       })
       .filter((m) => m.content.length > 0)
@@ -3395,6 +3422,17 @@ export class SteveChatApp {
     const text = (this.els.messageInput.value || "").trim();
     if (!text) return;
 
+    const voiceMetaRaw = this.pendingVoiceInputMeta;
+    this.pendingVoiceInputMeta = null;
+
+    const voiceMeta = voiceMetaRaw && Number(voiceMetaRaw.clipMs) > 0
+      ? {
+          clipMs: Math.max(0, Number(voiceMetaRaw.clipMs) || 0),
+          clips: Math.max(1, Number(voiceMetaRaw.clips) || 1),
+          sessionMs: Math.max(0, Number(this.totalVoiceSpokenMs) || 0),
+        }
+      : null;
+
     this.els.messageInput.value = "";
     this.autoSizeComposerInput();
 
@@ -3403,7 +3441,12 @@ export class SteveChatApp {
       ? { role: this.state.replyTarget.role, text: this.state.replyTarget.text }
       : null;
 
-    this.appendMessage("user", text, replyTo ? { replyTo } : {}, chatId);
+    const userOptions = {
+      ...(replyTo ? { replyTo } : {}),
+      ...(voiceMeta ? { voiceMeta } : {}),
+    };
+
+    this.appendMessage("user", text, userOptions, chatId);
     this.autoSummarizeChatTitleFromFirstPrompt(chatId, text);
     this.clearReplyTarget();
 
