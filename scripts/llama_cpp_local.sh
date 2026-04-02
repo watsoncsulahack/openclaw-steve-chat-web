@@ -363,11 +363,12 @@ start() {
     echo "$model_path" > "$LEGACY_MODEL_FILE"
   fi
 
-  local reasoning_enable reasoning_format reasoning_budget bin_help
+  local reasoning_enable reasoning_format reasoning_budget bin_help=""
   local embeddings_enable embedding_pooling
   local -a reasoning_args=()
   local -a alias_args=()
   local -a embedding_args=()
+  local -a extra_args=()
   reasoning_enable="${LLAMA_REASONING_ENABLE:-1}"
   reasoning_format="${LLAMA_REASONING_FORMAT:-deepseek-legacy}"
   reasoning_budget="${LLAMA_REASONING_BUDGET:--1}"
@@ -422,6 +423,13 @@ start() {
     alias_args+=(--alias "$model_alias")
   fi
 
+  if [[ -n "${LLAMA_EXTRA_ARGS:-}" ]]; then
+    # Intentionally split on shell words so callers can pass flags like:
+    # LLAMA_EXTRA_ARGS="--parallel 1 --no-cont-batching"
+    # shellcheck disable=SC2206
+    extra_args=(${LLAMA_EXTRA_ARGS})
+  fi
+
   echo "[llama-cpp] starting server"
   echo "  backend: $BACKEND_LABEL"
   echo "  bin:     $BIN"
@@ -433,6 +441,7 @@ start() {
   [[ -s "$REASONING_BUDGET_FILE" ]] && echo "  reasoning_budget: $(cat "$REASONING_BUDGET_FILE")"
   [[ -s "$EMBEDDINGS_FILE" ]] && echo "  embeddings: $(cat "$EMBEDDINGS_FILE")"
   [[ -s "$POOLING_FILE" ]] && echo "  pooling: $(cat "$POOLING_FILE")"
+  [[ ${#extra_args[@]} -gt 0 ]] && echo "  extra:   ${extra_args[*]}"
   echo "  model:   $model_path"
   [[ ${#alias_args[@]} -gt 0 ]] && echo "  alias:   $model_alias"
 
@@ -469,6 +478,7 @@ start() {
     "${DEVICE_ARGS[@]}" \
     "${reasoning_args[@]}" \
     "${embedding_args[@]}" \
+    "${extra_args[@]}" \
     --jinja \
     > "$LOG_FILE" 2>&1 &
 

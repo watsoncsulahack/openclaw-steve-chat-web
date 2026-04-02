@@ -1,8 +1,8 @@
-import { getDomRefs } from "./dom.js?v=20260402g";
-import { IdenticonService } from "./services/identicon-service.js?v=20260402g";
-import { GestureService } from "./services/gesture-service.js?v=20260402g";
-import { RuntimeClient } from "./services/runtime-client.js?v=20260402g";
-import { StorageService } from "./services/storage-service.js?v=20260402g";
+import { getDomRefs } from "./dom.js?v=20260402h";
+import { IdenticonService } from "./services/identicon-service.js?v=20260402h";
+import { GestureService } from "./services/gesture-service.js?v=20260402h";
+import { RuntimeClient } from "./services/runtime-client.js?v=20260402h";
+import { StorageService } from "./services/storage-service.js?v=20260402h";
 
 const WIDE_QUERY = "(min-width: 700px)";
 const ARCHIVE_ICON_SVG = '<svg class="archive-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16"/><rect x="5" y="6" width="14" height="13" rx="2"/><path d="M9 11h6"/><path d="M9 14h6"/></svg>';
@@ -20,6 +20,11 @@ const QVAC_RUNTIME_TARGETS = {
     endpoint: "http://127.0.0.1:18084",
     accel: "gpu-capable",
   },
+};
+
+const EMBEDDING_RUNTIME_DEFAULTS = {
+  endpoint: "http://127.0.0.1:18086",
+  model: "nomic-embed-text-v1.5.Q4_K_M",
 };
 
 const MODEL_PROFILES = {
@@ -55,6 +60,9 @@ const SIMPLE_RAG_PROFILE = {
   maxChunkCharsInPrompt: 320,
   topK: 5,
   maxFileBytes: 8 * 1024 * 1024,
+  maxChunks: 140,
+  embeddingBatchSize: 8,
+  embeddingRequestTimeoutMs: 120000,
 };
 
 export class SteveChatApp {
@@ -119,6 +127,8 @@ export class SteveChatApp {
       ? selectedQvacRuntime.endpoint
       : selectedRuntime.endpoint;
     const baseUrl = localStorage.getItem("steve.baseUrl") || defaultBaseUrl;
+    const embeddingBaseUrl = (localStorage.getItem("steve.embeddingBaseUrl") || EMBEDDING_RUNTIME_DEFAULTS.endpoint || baseUrl || "").replace(/\/$/, "");
+    const embeddingModel = localStorage.getItem("steve.embeddingModel") || EMBEDDING_RUNTIME_DEFAULTS.model;
 
     const maxTokensRaw = Number(localStorage.getItem("steve.maxTokens") || 300);
     const temperatureRaw = Number(localStorage.getItem("steve.temperature") || 0.4);
@@ -152,6 +162,8 @@ export class SteveChatApp {
       runtimeTarget: "default",
       qvacRuntimeTarget: "default",
       baseUrl,
+      embeddingBaseUrl,
+      embeddingModel,
       liveMode: (localStorage.getItem("steve.liveMode") ?? "1") === "1",
       wideDrawerMode,
       theme: localStorage.getItem("steve.theme") || "dark",
@@ -240,6 +252,8 @@ export class SteveChatApp {
     localStorage.setItem("steve.liveMode", "1");
 
     this.els.baseUrlInput.value = this.state.baseUrl;
+    if (this.els.embeddingBaseUrlInput) this.els.embeddingBaseUrlInput.value = this.state.embeddingBaseUrl || "";
+    if (this.els.embeddingModelInput) this.els.embeddingModelInput.value = this.state.embeddingModel || "";
     this.els.streamModeToggle.checked = Boolean(this.state.streamMode);
     this.els.ttsToggle.checked = Boolean(this.state.ttsEnabled);
     if (this.els.reasoningToggle) this.els.reasoningToggle.checked = Boolean(this.state.reasoningEnabled);
@@ -338,6 +352,9 @@ export class SteveChatApp {
     this.state.runtimeStatusText = String(this.state.runtimeStatusText || "Runtime ready.");
     this.state.runtimeErrorText = String(this.state.runtimeErrorText || "");
     this.state.runtimeGpuWarning = String(this.state.runtimeGpuWarning || "");
+
+    this.state.embeddingBaseUrl = String(this.state.embeddingBaseUrl || EMBEDDING_RUNTIME_DEFAULTS.endpoint || this.state.baseUrl || "").trim().replace(/\/$/, "");
+    this.state.embeddingModel = String(this.state.embeddingModel || EMBEDDING_RUNTIME_DEFAULTS.model || "").trim();
 
     this.ensureModelProfilesPresent();
 
@@ -608,6 +625,8 @@ export class SteveChatApp {
     this.els.closeSettingsBtn.addEventListener("click", () => this.toggleSettingsSheet(false));
 
     this.els.saveBaseUrlBtn.addEventListener("click", () => this.saveBaseUrl());
+    this.els.saveEmbeddingConfigBtn?.addEventListener("click", () => this.saveEmbeddingConfig());
+    this.els.testEmbeddingBtn?.addEventListener("click", () => this.testEmbeddingEndpoint());
     this.els.detectModelsBtn.addEventListener("click", () => this.detectModels());
     this.els.connectLocalLlamaBtn.addEventListener("click", () => this.connectLocalLlama());
 
@@ -1577,7 +1596,9 @@ export class SteveChatApp {
         throw new Error("No readable text found in document");
       }
 
-      const embedded = await this.embedDocumentChunks(chunks);
+      const embeddedResult = await this.embedDocumentChunks(chunks);
+      const embedded = embeddedResult.chunks || [];
+
       this.loadedDoc = {
         status: "ready",
         id: `doc-${Date.now().toString(36)}`,
@@ -1588,7 +1609,8 @@ export class SteveChatApp {
         sourceChars: text.length,
         chunkCount: embedded.length,
         chunks: embedded,
-        embeddingModel: this.state.selectedModel,
+        embeddingModel: embeddedResult.model || this.state.embeddingModel || this.state.selectedModel,
+        embeddingBaseUrl: embeddedResult.baseUrl || this.getEmbeddingEndpoint(),
         loadedAt: Date.now(),
       };
 
@@ -1711,28 +1733,39 @@ export class SteveChatApp {
       }
     });
 
-    return chunks;
+    const maxChunks = Math.max(8, Number(SIMPLE_RAG_PROFILE.maxChunks) || 140);
+    return chunks.slice(0, maxChunks);
   }
 
   async embedDocumentChunks(chunks = []) {
     const list = Array.isArray(chunks) ? chunks : [];
-    if (!list.length) return [];
+    if (!list.length) return { chunks: [], model: "", baseUrl: "" };
 
-    const model = this.state.selectedModel || this.state.models?.[0]?.id || "";
-    if (!model) {
-      throw new Error("No active model selected for embeddings.");
+    this.saveEmbeddingConfig({ announce: false });
+    const embeddingBaseUrl = this.getEmbeddingEndpoint();
+    if (!embeddingBaseUrl) {
+      throw new Error("Embedding endpoint is not configured.");
     }
 
-    const batchSize = 24;
+    const model = await this.resolveEmbeddingModel({ allowProbe: true });
+    if (!model) {
+      throw new Error("Embedding model is not configured.");
+    }
+
+    const batchSize = Math.max(1, Number(SIMPLE_RAG_PROFILE.embeddingBatchSize) || 8);
+    const requestTimeoutMs = Math.max(10000, Number(SIMPLE_RAG_PROFILE.embeddingRequestTimeoutMs) || 120000);
     const out = [];
 
     for (let i = 0; i < list.length; i += batchSize) {
       const batch = list.slice(i, i + batchSize);
+      const end = i + batch.length;
+      this.setRuntimeState("working", `Embedding document chunks ${end}/${list.length} on ${embeddingBaseUrl}...`);
+
       const result = await this.runtimeClient.createEmbeddings({
-        baseUrl: this.state.baseUrl,
+        baseUrl: embeddingBaseUrl,
         model,
         input: batch.map((c) => c.text),
-        requestTimeoutMs: 90000,
+        requestTimeoutMs,
       });
 
       const vectors = result.vectors || [];
@@ -1757,7 +1790,11 @@ export class SteveChatApp {
       throw new Error("Embeddings endpoint returned empty vectors.");
     }
 
-    return out;
+    return {
+      chunks: out,
+      model,
+      baseUrl: embeddingBaseUrl,
+    };
   }
 
   vectorNorm(vec = []) {
@@ -1795,12 +1832,19 @@ export class SteveChatApp {
     const query = String(userQuery || "").trim();
     if (!query) return messages;
 
+    const embeddingBaseUrl = String(doc.embeddingBaseUrl || this.getEmbeddingEndpoint() || this.state.baseUrl).trim();
+    const embeddingModel = String(doc.embeddingModel || this.state.embeddingModel || this.state.selectedModel || "").trim();
+
+    if (!embeddingBaseUrl || !embeddingModel) {
+      throw new Error("Document embedding endpoint/model is not configured.");
+    }
+
     const queryEmb = await this.runtimeClient.createEmbeddings({
-      baseUrl: this.state.baseUrl,
-      model: doc.embeddingModel || this.state.selectedModel,
+      baseUrl: embeddingBaseUrl,
+      model: embeddingModel,
       input: query,
       signal,
-      requestTimeoutMs: 30000,
+      requestTimeoutMs: 45000,
     });
 
     const qVec = queryEmb.vectors?.[0];
@@ -3087,6 +3131,86 @@ export class SteveChatApp {
 
     this.setRuntimeState("idle", `Endpoint saved: ${this.state.baseUrl}`);
     this.schedulePersist();
+  }
+
+  getEmbeddingEndpoint() {
+    return String(this.state.embeddingBaseUrl || this.state.baseUrl || "").trim().replace(/\/$/, "");
+  }
+
+  saveEmbeddingConfig({ announce = true } = {}) {
+    const endpoint = String(this.els.embeddingBaseUrlInput?.value || this.state.embeddingBaseUrl || this.state.baseUrl || "").trim().replace(/\/$/, "");
+    const model = String(this.els.embeddingModelInput?.value || this.state.embeddingModel || "").trim();
+
+    this.state.embeddingBaseUrl = endpoint;
+    this.state.embeddingModel = model;
+
+    if (this.els.embeddingBaseUrlInput) this.els.embeddingBaseUrlInput.value = endpoint;
+    if (this.els.embeddingModelInput) this.els.embeddingModelInput.value = model;
+
+    localStorage.setItem("steve.embeddingBaseUrl", endpoint);
+    localStorage.setItem("steve.embeddingModel", model);
+
+    if (announce) {
+      const label = model ? `${endpoint} (${model})` : endpoint;
+      this.setRuntimeState("idle", `Embedding config saved: ${label}`);
+    }
+
+    this.schedulePersist();
+  }
+
+  async resolveEmbeddingModel({ allowProbe = true } = {}) {
+    const configured = String(this.state.embeddingModel || "").trim();
+    if (configured) return configured;
+    if (!allowProbe) {
+      throw new Error("Embedding model is not configured.");
+    }
+
+    const endpoint = this.getEmbeddingEndpoint();
+    if (!endpoint) {
+      throw new Error("Embedding endpoint is not configured.");
+    }
+
+    const listed = await this.runtimeClient.fetchModelsWithRetry(endpoint, {
+      timeoutMs: 12000,
+      intervalMs: 700,
+      requestTimeoutMs: 3500,
+    });
+
+    const first = String(listed?.[0]?.id || "").trim();
+    if (!first) {
+      throw new Error(`No model returned by embedding endpoint ${endpoint}`);
+    }
+
+    this.state.embeddingModel = first;
+    localStorage.setItem("steve.embeddingModel", first);
+    if (this.els.embeddingModelInput) this.els.embeddingModelInput.value = first;
+    this.schedulePersist();
+    return first;
+  }
+
+  async testEmbeddingEndpoint() {
+    this.saveEmbeddingConfig({ announce: false });
+
+    const endpoint = this.getEmbeddingEndpoint();
+    if (!endpoint) {
+      this.setRuntimeState("error", "Embedding endpoint is empty.");
+      return;
+    }
+
+    this.setRuntimeState("working", `Testing embeddings on ${endpoint}...`);
+
+    try {
+      const model = await this.resolveEmbeddingModel({ allowProbe: true });
+      await this.runtimeClient.createEmbeddings({
+        baseUrl: endpoint,
+        model,
+        input: "Embedding health check",
+        requestTimeoutMs: 45000,
+      });
+      this.setRuntimeState("ok", `Embeddings ready on ${endpoint} (${model}).`);
+    } catch (err) {
+      this.setRuntimeState("error", `Embedding test failed: ${String(err?.message || err)}`);
+    }
   }
 
   saveChatDefaults() {

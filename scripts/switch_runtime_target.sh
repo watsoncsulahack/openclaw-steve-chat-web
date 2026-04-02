@@ -19,6 +19,14 @@ QVAC_VK_BIN="${QVAC_VK_BIN:-/data/data/com.termux/files/home/openclaw-binaries/q
 
 GEMMA_E2B_PATH="${GEMMA_E2B_PATH:-/storage/emulated/0/OpenClawHub/models/gemma-3n-E2B-it-UD-Q4_K_XL.gguf}"
 GEMMA_E4B_PATH="${GEMMA_E4B_PATH:-/storage/emulated/0/OpenClawHub/models/gemma-3n-E4B-it-UD-Q4_K_XL.gguf}"
+EMBED_MODEL_PATH="${EMBED_MODEL_PATH:-/storage/emulated/0/OpenClawHub/models/nomic-embed-text-v1.5.Q4_K_M.gguf}"
+EMBED_ENABLE="${EMBED_ENABLE:-1}"
+EMBED_PORT="${EMBED_PORT:-18086}"
+EMBED_MODE="${EMBED_MODE:-cpu}"
+EMBED_CTX="${EMBED_CTX:-1024}"
+EMBED_THREADS="${EMBED_THREADS:-2}"
+EMBED_N_GPU_LAYERS="${EMBED_N_GPU_LAYERS:-0}"
+EMBED_POOLING="${EMBED_POOLING:-mean}"
 
 resolve_model_path() {
   local idx="$1"
@@ -57,6 +65,11 @@ Targets:
 
 Example:
   ./scripts/switch_runtime_target.sh qvac-vulkan
+
+Embedding sidecar defaults (qvac targets):
+  EMBED_ENABLE=1
+  EMBED_PORT=18086
+  EMBED_MODEL_PATH=/storage/emulated/0/OpenClawHub/models/nomic-embed-text-v1.5.Q4_K_M.gguf
 EOF
 }
 
@@ -73,6 +86,7 @@ stop_all() {
   # qvac ports
   env QVAC_LLAMA_PORT=18081 bash "$LAUNCHER" stop --backend qvac || true
   env QVAC_LLAMA_PORT=18084 bash "$LAUNCHER" stop --backend qvac || true
+  env QVAC_LLAMA_PORT="$EMBED_PORT" bash "$LAUNCHER" stop --backend qvac || true
 }
 
 need_bin() {
@@ -81,9 +95,39 @@ need_bin() {
   [[ -x "$path" ]] || { echo "ERROR: missing $label binary: $path" >&2; exit 1; }
 }
 
+start_embedding_sidecar() {
+  local embed_bin="$1"
+
+  if [[ "$EMBED_ENABLE" == "0" ]]; then
+    echo "Embedding sidecar disabled (EMBED_ENABLE=0)."
+    return 0
+  fi
+
+  if [[ ! -f "$EMBED_MODEL_PATH" ]]; then
+    echo "Embedding model not found (skipping sidecar): $EMBED_MODEL_PATH"
+    return 0
+  fi
+
+  need_bin "embedding sidecar" "$embed_bin"
+
+  echo "Starting embedding sidecar"
+  echo "  port:  $EMBED_PORT"
+  echo "  model: $EMBED_MODEL_PATH"
+  echo "  mode:  $EMBED_MODE"
+
+  env QVAC_LLAMA_BIN="$embed_bin" QVAC_LLAMA_PORT="$EMBED_PORT" \
+    QVAC_N_GPU_LAYERS="$EMBED_N_GPU_LAYERS" LLAMA_CPP_CTX="$EMBED_CTX" LLAMA_CPP_THREADS="$EMBED_THREADS" \
+    LLAMA_REASONING_ENABLE=0 LLAMA_EMBEDDINGS_ENABLE=1 LLAMA_EMBEDDINGS_POOLING="$EMBED_POOLING" \
+    LLAMA_EXTRA_ARGS="--parallel 1 --no-cont-batching --ubatch-size 1024" \
+    bash "$LAUNCHER" start --backend qvac --mode "$EMBED_MODE" --model "$EMBED_MODEL_PATH"
+}
+
 stop_all
 
 echo "Using model path: $MODEL_PATH_OVERRIDE"
+
+NEED_EMBED_SIDECAR=0
+EMBED_BIN="$QVAC_VK_BIN"
 
 case "$TARGET" in
   reg-prebuilt)
@@ -110,6 +154,8 @@ case "$TARGET" in
       QVAC_N_GPU_LAYERS="${QVAC_N_GPU_LAYERS:-0}" LLAMA_CPP_CTX="${LLAMA_CPP_CTX:-2048}" LLAMA_CPP_THREADS="${LLAMA_CPP_THREADS:-3}" \
       LLAMA_EMBEDDINGS_ENABLE="${LLAMA_EMBEDDINGS_ENABLE:-1}" LLAMA_EMBEDDINGS_POOLING="${LLAMA_EMBEDDINGS_POOLING:-mean}" \
       bash "$LAUNCHER" start --backend qvac --mode cpu --model "$MODEL_PATH_OVERRIDE"
+    NEED_EMBED_SIDECAR=1
+    EMBED_BIN="$QVAC_CPU_BIN"
     ;;
   qvac-vulkan)
     need_bin "qvac vulkan" "$QVAC_VK_BIN"
@@ -117,6 +163,8 @@ case "$TARGET" in
       QVAC_N_GPU_LAYERS="${QVAC_N_GPU_LAYERS:-72}" LLAMA_CPP_CTX="${LLAMA_CPP_CTX:-2048}" LLAMA_CPP_THREADS="${LLAMA_CPP_THREADS:-3}" \
       LLAMA_EMBEDDINGS_ENABLE="${LLAMA_EMBEDDINGS_ENABLE:-1}" LLAMA_EMBEDDINGS_POOLING="${LLAMA_EMBEDDINGS_POOLING:-mean}" \
       bash "$LAUNCHER" start --backend qvac --mode gpu --model "$MODEL_PATH_OVERRIDE"
+    NEED_EMBED_SIDECAR=1
+    EMBED_BIN="$QVAC_VK_BIN"
     ;;
   *)
     usage
@@ -124,8 +172,12 @@ case "$TARGET" in
     ;;
 esac
 
+if [[ "$NEED_EMBED_SIDECAR" == "1" ]]; then
+  start_embedding_sidecar "$EMBED_BIN"
+fi
+
 echo "\nActive endpoint(s):"
-for p in 18080 18082 18083 18081 18084; do
+for p in 18080 18082 18083 18081 18084 "$EMBED_PORT"; do
   code="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${p}/v1/models" || true)"
   if [[ "$code" == "200" ]]; then
     echo "  - $p (OK)"

@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <title>Steve Chat (Prototype)</title>
-    <link rel="stylesheet" href="./style.css?v=20260402g" />
+    <link rel="stylesheet" href="./style.css?v=20260402h" />
   </head>
   <body>
     <div class="app-shell">
@@ -159,6 +159,15 @@
               <button id="applyModelProfileBtn" class="secondary">Apply model</button>
             </div>
 
+            <label class="field-label" for="embeddingBaseUrlInput">Embedding endpoint</label>
+            <input id="embeddingBaseUrlInput" type="text" value="http://127.0.0.1:18086" />
+            <label class="field-label" for="embeddingModelInput">Embedding model id</label>
+            <input id="embeddingModelInput" type="text" value="nomic-embed-text-v1.5.Q4_K_M" />
+            <div class="drawer-row">
+              <button id="saveEmbeddingConfigBtn" class="secondary">Save embedding config</button>
+              <button id="testEmbeddingBtn" class="secondary">Test embeddings</button>
+            </div>
+
             <p id="runtimeStatus" class="hint">Runtime: idle.</p>
             <section id="runtimeErrorPanel" class="runtime-error-panel hidden" aria-live="polite">
               <div class="runtime-error-head">Runtime error log</div>
@@ -233,6 +242,6 @@
       </article>
     </template>
 
-    <script type="module" src="./src/main.js?v=20260402g"></script>
+    <script type="module" src="./src/main.js?v=20260402h"></script>
   </body>
 </html>
