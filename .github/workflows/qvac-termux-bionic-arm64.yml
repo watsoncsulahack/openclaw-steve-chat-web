@@ -6,7 +6,7 @@ on:
       qvac_ref:
         description: "qvac git ref (tag/branch/sha)"
         required: false
-        default: "main"
+        default: "master"
       android_api:
         description: "Android API level for target binary"
         required: false
@@ -37,7 +37,7 @@ jobs:
             ggml_vulkan: "ON"
 
     env:
-      QVAC_REF: ${{ inputs.qvac_ref || 'main' }}
+      QVAC_REF: ${{ inputs.qvac_ref || 'master' }}
       ANDROID_API: ${{ inputs.android_api || '34' }}
       NDK_VERSION: ${{ inputs.ndk_version || '27.2.12479018' }}
       BUILD_JOBS: ${{ inputs.jobs || '2' }}
