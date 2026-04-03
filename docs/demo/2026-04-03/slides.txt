@@ -1,0 +1,7 @@
+file 'screenshots/01-settings-doc-picker-state.jpg'
+duration 4
+file 'screenshots/02-settings-embedding-timeout-state.jpg'
+duration 4
+file 'screenshots/03-chat-ui-reference.jpg'
+duration 4
+file 'screenshots/03-chat-ui-reference.jpg'
