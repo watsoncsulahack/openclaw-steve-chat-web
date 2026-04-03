@@ -3127,7 +3127,7 @@ export class SteveChatApp {
       this.renderModels();
       this.clearLoadedDocument({ silent: true });
       this.resetActiveChatForModelSwitch(profile.name);
-      this.setRuntimeState("ok", `Applied ${profile.name} on ${this.getBackendLabel()} with fresh context.`);
+      this.setRuntimeState("ok", `Applied ${profile.name} on ${this.getBackendLabel()} (chat history preserved).`);
       this.schedulePersist();
     } catch (err) {
       this.setRuntimeState("error", `Model switch failed: ${String(err?.message || err)}`);
@@ -3580,8 +3580,13 @@ export class SteveChatApp {
     if (!chatId) return;
 
     const nextName = String(modelName || "selected model").trim();
-    const note = `Switched runtime model to ${nextName}. New thread ready.`;
-    this.state.messages[chatId] = [{ role: "steve", text: note, excludeFromContext: true }];
+    const note = `Switched runtime model to ${nextName}. Chat history preserved.`;
+
+    if (!Array.isArray(this.state.messages[chatId])) {
+      this.state.messages[chatId] = [];
+    }
+
+    this.state.messages[chatId].push({ role: "steve", text: note, excludeFromContext: true });
     this.clearReplyTarget();
     this.renderMessages();
     this.renderChats();
