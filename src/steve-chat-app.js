@@ -289,7 +289,7 @@ export class SteveChatApp {
     this.renderAll();
     this.autoSizeComposerInput();
     this.setAudioStatus("Audio: idle", "");
-    this.queueReasoningCapabilityProbe();
+    this.queueReasoningCapabilityProbe({ force: true });
   }
 
   ensureStateDefaults() {
@@ -3125,6 +3125,7 @@ export class SteveChatApp {
       localStorage.setItem("steve.model", this.state.selectedModel);
       this.syncModelLabel();
       this.renderModels();
+      this.queueReasoningCapabilityProbe({ force: true });
       this.clearLoadedDocument({ silent: true });
       this.resetActiveChatForModelSwitch(profile.name);
       this.setRuntimeState("ok", `Applied ${profile.name} on ${this.getBackendLabel()} (chat history preserved).`);
@@ -3324,7 +3325,7 @@ export class SteveChatApp {
         this.setRuntimeState("ok", localHit ? `Connected ${this.getBackendLabel()}` : `Detected ${listed.length} model(s).`);
       }
 
-      this.queueReasoningCapabilityProbe();
+      this.queueReasoningCapabilityProbe({ force: true });
       this.notifyGpuFallbackIfNeeded();
       this.schedulePersist();
     };
@@ -3468,7 +3469,7 @@ export class SteveChatApp {
       this.ensureModelProfilesPresent(listed);
       this.renderModels();
       this.syncModelLabel();
-      this.queueReasoningCapabilityProbe();
+      this.queueReasoningCapabilityProbe({ force: true });
       this.state.localLlamaConnected = true;
       this.renderLocalLlamaButton();
       this.setRuntimeState("ok", `Connected ${this.getBackendLabel()} (auto-recovered).`);
