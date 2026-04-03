@@ -6,7 +6,19 @@ on:
       qvac_ref:
         description: "qvac git ref (tag/branch/sha)"
         required: false
-        default: "b7336"
+        default: "main"
+      android_api:
+        description: "Android API level for target binary"
+        required: false
+        default: "34"
+      ndk_version:
+        description: "Android NDK version"
+        required: false
+        default: "27.2.12479018"
+      jobs:
+        description: "Parallel build jobs"
+        required: false
+        default: "2"
 
 jobs:
   build:
@@ -21,6 +33,12 @@ jobs:
           - variant: vulkan
             ggml_vulkan: "ON"
 
+    env:
+      QVAC_REF: ${{ inputs.qvac_ref || 'main' }}
+      ANDROID_API: ${{ inputs.android_api || '34' }}
+      NDK_VERSION: ${{ inputs.ndk_version || '27.2.12479018' }}
+      BUILD_JOBS: ${{ inputs.jobs || '2' }}
+
     steps:
       - name: Checkout wrapper repo
         uses: actions/checkout@v4
@@ -29,7 +47,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential cmake ninja-build git pkg-config ca-certificates unzip
+            build-essential cmake ninja-build git pkg-config ca-certificates unzip binutils
 
       - name: Install Vulkan build deps
         if: ${{ matrix.variant == 'vulkan' }}
@@ -45,38 +63,74 @@ jobs:
       - name: Install Android NDK
         run: |
           yes | sdkmanager --licenses >/dev/null
-          sdkmanager "ndk;27.2.12479018"
-          echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> $GITHUB_ENV
+          sdkmanager "ndk;${NDK_VERSION}"
+          echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
 
       - name: Clone qvac source
-        env:
-          QVAC_REF: ${{ github.event.inputs.qvac_ref || 'b7336' }}
+        id: src
         run: |
+          set -euo pipefail
           rm -rf qvac-src
-          git clone --depth 1 --branch "$QVAC_REF" https://github.com/tetherto/qvac-fabric-llm.cpp.git qvac-src
+          git clone --filter=blob:none https://github.com/tetherto/qvac-fabric-llm.cpp.git qvac-src
           cd qvac-src
-          git rev-parse HEAD
 
-      - name: Ensure Vulkan C++ headers are available
+          if git checkout --detach "$QVAC_REF" 2>/dev/null; then
+            echo "Checked out local/remote ref: $QVAC_REF"
+          else
+            git fetch --depth 1 origin "$QVAC_REF"
+            git checkout --detach FETCH_HEAD
+            echo "Checked out fetched ref: $QVAC_REF"
+          fi
+
+          SHA="$(git rev-parse --short=12 HEAD)"
+          echo "Resolved SHA: $SHA"
+          echo "resolved_sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "artifact_prefix=qvac-${SHA}-android-bionic-arm64-${{ matrix.variant }}" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure Vulkan headers are available (C, C++, vk_video)
         if: ${{ matrix.variant == 'vulkan' }}
         run: |
           set -euo pipefail
-          TARGET_DIR="qvac-src/ggml/src/ggml-vulkan/vulkan_cpp_wrapper/include/vulkan"
-          mkdir -p "$TARGET_DIR"
-          if ! ls /usr/include/vulkan/*.hpp >/dev/null 2>&1; then
-            echo "Vulkan C++ headers (*.hpp) not found in /usr/include/vulkan" >&2
+
+          test -f /usr/include/vulkan/vulkan_core.h || {
+            echo "Missing host Vulkan C headers (vulkan_core.h)" >&2
             exit 1
+          }
+          ls /usr/include/vulkan/*.hpp >/dev/null 2>&1 || {
+            echo "Missing host Vulkan C++ headers (*.hpp)" >&2
+            exit 1
+          }
+
+          TARGET_CPP_DIR="qvac-src/ggml/src/ggml-vulkan/vulkan_cpp_wrapper/include/vulkan"
+          mkdir -p "$TARGET_CPP_DIR"
+          cp -f /usr/include/vulkan/*.hpp "$TARGET_CPP_DIR/"
+
+          SYSROOT_INCLUDE="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include"
+          mkdir -p "$SYSROOT_INCLUDE/vulkan" "$SYSROOT_INCLUDE/vk_video"
+
+          if [ ! -f "$SYSROOT_INCLUDE/vulkan/vulkan_core.h" ]; then
+            cp -f /usr/include/vulkan/*.h "$SYSROOT_INCLUDE/vulkan/"
           fi
-          cp -f /usr/include/vulkan/*.hpp "$TARGET_DIR/"
+
+          if ls /usr/include/vk_video/*.h >/dev/null 2>&1; then
+            cp -f /usr/include/vk_video/*.h "$SYSROOT_INCLUDE/vk_video/"
+          fi
+
+          test -f "$SYSROOT_INCLUDE/vulkan/vulkan_core.h" || {
+            echo "Missing sysroot Vulkan core header after hydration" >&2
+            exit 1
+          }
 
       - name: Configure Android arm64 build
         working-directory: qvac-src
         run: |
           cmake -S . -B build-android -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=arm64-v8a \
-            -DANDROID_PLATFORM=android-28 \
+            -DANDROID_PLATFORM="android-${ANDROID_API}" \
             -DANDROID_STL=c++_shared \
+            -DGGML_NATIVE=OFF \
             -DGGML_VULKAN=${{ matrix.ggml_vulkan }} \
             -DGGML_OPENMP=OFF \
             -DLLAMA_OPENMP=OFF \
@@ -90,13 +144,25 @@ jobs:
       - name: Build llama-server
         working-directory: qvac-src
         run: |
-          cmake --build build-android --target llama-server -j 2
+          cmake --build build-android --target llama-server -j "${BUILD_JOBS}"
+
+      - name: Validate Vulkan linkage
+        if: ${{ matrix.variant == 'vulkan' }}
+        working-directory: qvac-src
+        run: |
+          set -euo pipefail
+          test -f build-android/bin/libggml-vulkan.so
+          file build-android/bin/llama-server
+          readelf -d build-android/bin/libggml-vulkan.so | grep -q 'Shared library: \[libvulkan.so\]'
+          readelf -d build-android/bin/llama-server | grep -q 'Shared library: \[libllama.so\]'
 
       - name: Package artifact
         working-directory: qvac-src
         run: |
           set -euo pipefail
-          OUT="dist/qvac-b7336-android-bionic-arm64-${{ matrix.variant }}"
+
+          ART_PREFIX="${{ steps.src.outputs.artifact_prefix }}"
+          OUT="dist/${ART_PREFIX}"
           mkdir -p "$OUT"
 
           cp -f build-android/bin/llama-server "$OUT/"
@@ -109,20 +175,46 @@ jobs:
             if [ -e "$f" ]; then cp -f "$f" "$OUT/"; fi
           done
 
-          tar -czf "qvac-b7336-android-bionic-arm64-${{ matrix.variant }}.tar.gz" -C "$OUT" .
-          sha256sum "qvac-b7336-android-bionic-arm64-${{ matrix.variant }}.tar.gz" > "qvac-b7336-android-bionic-arm64-${{ matrix.variant }}.tar.gz.sha256"
-          sha256sum "$OUT/llama-server" > "qvac-b7336-android-bionic-arm64-${{ matrix.variant }}-llama-server.sha256"
+          cat > "$OUT/llama-server-wrapper.sh" <<'EOF'
+#!/data/data/com.termux/files/usr/bin/bash
+set -euo pipefail
+BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+unset VK_ICD_FILENAMES VK_LAYER_PATH VK_DRIVER_FILES MESA_VK_DEVICE_SELECT
+export LD_LIBRARY_PATH="$BIN_DIR:${LD_LIBRARY_PATH:-}"
+exec "$BIN_DIR/llama-server" "$@"
+EOF
+          chmod +x "$OUT/llama-server-wrapper.sh"
+
+          cat > "$OUT/RUNTIME_NOTES.txt" <<EOF
+Artifact: ${ART_PREFIX}
+Variant: ${{ matrix.variant }}
+QVAC ref input: ${QVAC_REF}
+QVAC resolved SHA: ${{ steps.src.outputs.resolved_sha }}
+Android API: ${ANDROID_API}
+NDK: ${NDK_VERSION}
+
+On Termux/Android, run with:
+  ./llama-server-wrapper.sh --list-devices
+
+Expected for Vulkan variant:
+  - shows at least one Vulkan device (Adreno on target device)
+  - no 'no usable GPU found' warning in server logs
+EOF
+
+          tar -czf "${ART_PREFIX}.tar.gz" -C "$OUT" .
+          sha256sum "${ART_PREFIX}.tar.gz" > "${ART_PREFIX}.tar.gz.sha256"
+          sha256sum "$OUT/llama-server" > "${ART_PREFIX}-llama-server.sha256"
 
       - name: Upload tarball
         uses: actions/upload-artifact@v4
         with:
-          name: qvac-b7336-android-bionic-arm64-${{ matrix.variant }}.tar.gz
-          path: qvac-src/qvac-b7336-android-bionic-arm64-${{ matrix.variant }}.tar.gz
+          name: ${{ steps.src.outputs.artifact_prefix }}.tar.gz
+          path: qvac-src/${{ steps.src.outputs.artifact_prefix }}.tar.gz
 
       - name: Upload checksums
         uses: actions/upload-artifact@v4
         with:
-          name: qvac-b7336-android-bionic-arm64-${{ matrix.variant }}-sha256
+          name: ${{ steps.src.outputs.artifact_prefix }}-sha256
           path: |
-            qvac-src/qvac-b7336-android-bionic-arm64-${{ matrix.variant }}.tar.gz.sha256
-            qvac-src/qvac-b7336-android-bionic-arm64-${{ matrix.variant }}-llama-server.sha256
+            qvac-src/${{ steps.src.outputs.artifact_prefix }}.tar.gz.sha256
+            qvac-src/${{ steps.src.outputs.artifact_prefix }}-llama-server.sha256
