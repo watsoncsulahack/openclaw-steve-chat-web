@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <title>Steve Chat (Prototype)</title>
-    <link rel="stylesheet" href="./style.css?v=20260402h" />
+    <link rel="stylesheet" href="./style.css?v=20260403c" />
   </head>
   <body>
     <div class="app-shell">
@@ -153,8 +153,10 @@
             <label class="field-label" for="modelProfileSelect">Local model profile</label>
             <div class="drawer-row">
               <select id="modelProfileSelect">
-                <option value="e4b">Gemma 3n E4B (4B profile)</option>
-                <option value="e2b">Gemma 3n E2B</option>
+                <option value="e4b">Gemma 3n E4B (UD Q4_K_XL)</option>
+                <option value="e2b">Gemma 3n E2B (UD Q4_K_XL)</option>
+                <option value="g4e2b">Gemma 4 E2B IT (instruct, Q4_K_M)</option>
+                <option value="g4e4b">Gemma 4 E4B IT (instruct, Q4_K_M)</option>
               </select>
               <button id="applyModelProfileBtn" class="secondary">Apply model</button>
             </div>
@@ -242,6 +244,6 @@
       </article>
     </template>
 
-    <script type="module" src="./src/main.js?v=20260402h"></script>
+    <script type="module" src="./src/main.js?v=20260403c"></script>
   </body>
 </html>

@@ -40,6 +40,18 @@ const MODEL_PROFILES = {
     memoryGb: 8,
     modelIndex: 2,
   },
+  g4e2b: {
+    id: "gemma-4-E2B-it-Q4_K_M.gguf",
+    name: "Gemma 4 E2B IT (instruct)",
+    memoryGb: 5,
+    modelIndex: 5,
+  },
+  g4e4b: {
+    id: "gemma-4-E4B-it-Q4_K_M.gguf",
+    name: "Gemma 4 E4B IT (instruct)",
+    memoryGb: 8,
+    modelIndex: 6,
+  },
 };
 
 const CHAT_TEMPLATE_PRESETS = {
