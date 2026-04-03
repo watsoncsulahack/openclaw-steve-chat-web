@@ -19,6 +19,9 @@ on:
         description: "Parallel build jobs"
         required: false
         default: "2"
+  push:
+    paths:
+      - ".github/workflows/qvac-termux-bionic-arm64.yml"
 
 jobs:
   build:
@@ -176,30 +179,30 @@ jobs:
           done
 
           cat > "$OUT/llama-server-wrapper.sh" <<'EOF'
-#!/data/data/com.termux/files/usr/bin/bash
-set -euo pipefail
-BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
-unset VK_ICD_FILENAMES VK_LAYER_PATH VK_DRIVER_FILES MESA_VK_DEVICE_SELECT
-export LD_LIBRARY_PATH="$BIN_DIR:${LD_LIBRARY_PATH:-}"
-exec "$BIN_DIR/llama-server" "$@"
-EOF
+          #!/data/data/com.termux/files/usr/bin/bash
+          set -euo pipefail
+          BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+          unset VK_ICD_FILENAMES VK_LAYER_PATH VK_DRIVER_FILES MESA_VK_DEVICE_SELECT
+          export LD_LIBRARY_PATH="$BIN_DIR:${LD_LIBRARY_PATH:-}"
+          exec "$BIN_DIR/llama-server" "$@"
+          EOF
           chmod +x "$OUT/llama-server-wrapper.sh"
 
           cat > "$OUT/RUNTIME_NOTES.txt" <<EOF
-Artifact: ${ART_PREFIX}
-Variant: ${{ matrix.variant }}
-QVAC ref input: ${QVAC_REF}
-QVAC resolved SHA: ${{ steps.src.outputs.resolved_sha }}
-Android API: ${ANDROID_API}
-NDK: ${NDK_VERSION}
+          Artifact: ${ART_PREFIX}
+          Variant: ${{ matrix.variant }}
+          QVAC ref input: ${QVAC_REF}
+          QVAC resolved SHA: ${{ steps.src.outputs.resolved_sha }}
+          Android API: ${ANDROID_API}
+          NDK: ${NDK_VERSION}
 
-On Termux/Android, run with:
-  ./llama-server-wrapper.sh --list-devices
+          On Termux/Android, run with:
+            ./llama-server-wrapper.sh --list-devices
 
-Expected for Vulkan variant:
-  - shows at least one Vulkan device (Adreno on target device)
-  - no 'no usable GPU found' warning in server logs
-EOF
+          Expected for Vulkan variant:
+            - shows at least one Vulkan device (Adreno on target device)
+            - no 'no usable GPU found' warning in server logs
+          EOF
 
           tar -czf "${ART_PREFIX}.tar.gz" -C "$OUT" .
           sha256sum "${ART_PREFIX}.tar.gz" > "${ART_PREFIX}.tar.gz.sha256"
