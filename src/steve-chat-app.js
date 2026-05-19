@@ -2814,7 +2814,13 @@ export class SteveChatApp {
       throw new Error(`stt endpoint http ${res.status}`);
     }
     const data = await res.json();
-    return String(data?.text || "").trim();
+    const text = String(data?.text || "").trim();
+    const savedPath = String(data?.savedPath || "").trim();
+    if (savedPath) {
+      localStorage.setItem("steve.lastRecordingPath", savedPath);
+      this.setRuntimeState("working", `Audio saved: ${savedPath}`);
+    }
+    return text;
   }
 
   async toggleSpeechInput() {
