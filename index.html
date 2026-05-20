@@ -141,6 +141,12 @@
               <button id="saveBaseUrlBtn" class="secondary">Save</button>
               <button id="detectModelsBtn" class="secondary">Detect</button>
             </div>
+
+            <label class="field-label" for="modelDirInput">Local model directory (for server config)</label>
+            <input id="modelDirInput" type="text" placeholder="/path/to/gguf/models" />
+            <div class="drawer-row">
+              <button id="saveModelDirBtn" class="secondary">Save model dir</button>
+            </div>
             <label class="field-label" for="backendSelect">Backend</label>
             <div class="drawer-row backend-connect-row">
               <select id="backendSelect">

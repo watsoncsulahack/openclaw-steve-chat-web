@@ -139,6 +139,7 @@ export class SteveChatApp {
       ? selectedQvacRuntime.endpoint
       : selectedRuntime.endpoint;
     const baseUrl = localStorage.getItem("steve.baseUrl") || defaultBaseUrl;
+    const modelDir = localStorage.getItem("steve.modelDir") || "";
     const embeddingBaseUrl = (localStorage.getItem("steve.embeddingBaseUrl") || EMBEDDING_RUNTIME_DEFAULTS.endpoint || baseUrl || "").replace(/\/$/, "");
     const embeddingModel = localStorage.getItem("steve.embeddingModel") || EMBEDDING_RUNTIME_DEFAULTS.model;
 
@@ -174,6 +175,7 @@ export class SteveChatApp {
       runtimeTarget: "default",
       qvacRuntimeTarget: "default",
       baseUrl,
+      modelDir,
       embeddingBaseUrl,
       embeddingModel,
       liveMode: (localStorage.getItem("steve.liveMode") ?? "1") === "1",
@@ -264,6 +266,7 @@ export class SteveChatApp {
     localStorage.setItem("steve.liveMode", "1");
 
     this.els.baseUrlInput.value = this.state.baseUrl;
+    if (this.els.modelDirInput) this.els.modelDirInput.value = this.state.modelDir || "";
     if (this.els.embeddingBaseUrlInput) this.els.embeddingBaseUrlInput.value = this.state.embeddingBaseUrl || "";
     if (this.els.embeddingModelInput) this.els.embeddingModelInput.value = this.state.embeddingModel || "";
     this.els.streamModeToggle.checked = Boolean(this.state.streamMode);
@@ -364,6 +367,7 @@ export class SteveChatApp {
     this.state.runtimeStatusText = String(this.state.runtimeStatusText || "Runtime ready.");
     this.state.runtimeErrorText = String(this.state.runtimeErrorText || "");
     this.state.runtimeGpuWarning = String(this.state.runtimeGpuWarning || "");
+    this.state.modelDir = String(this.state.modelDir || "").trim();
 
     this.state.embeddingBaseUrl = String(this.state.embeddingBaseUrl || EMBEDDING_RUNTIME_DEFAULTS.endpoint || this.state.baseUrl || "").trim().replace(/\/$/, "");
     this.state.embeddingModel = String(this.state.embeddingModel || EMBEDDING_RUNTIME_DEFAULTS.model || "").trim();
@@ -637,6 +641,7 @@ export class SteveChatApp {
     this.els.closeSettingsBtn.addEventListener("click", () => this.toggleSettingsSheet(false));
 
     this.els.saveBaseUrlBtn.addEventListener("click", () => this.saveBaseUrl());
+    this.els.saveModelDirBtn?.addEventListener("click", () => this.saveModelDir());
     this.els.saveEmbeddingConfigBtn?.addEventListener("click", () => this.saveEmbeddingConfig());
     this.els.testEmbeddingBtn?.addEventListener("click", () => this.testEmbeddingEndpoint());
     this.els.detectModelsBtn.addEventListener("click", () => this.detectModels());
@@ -3149,6 +3154,20 @@ export class SteveChatApp {
     if (!isSelectedBackendEndpoint) this.state.localLlamaConnected = false;
 
     this.setRuntimeState("idle", `Endpoint saved: ${this.state.baseUrl}`);
+    this.schedulePersist();
+  }
+
+  saveModelDir() {
+    const value = String(this.els.modelDirInput?.value || "").trim();
+    this.state.modelDir = value;
+    if (this.els.modelDirInput) this.els.modelDirInput.value = value;
+    localStorage.setItem("steve.modelDir", value);
+
+    if (!value) {
+      this.setRuntimeState("idle", "Local model directory cleared.");
+    } else {
+      this.setRuntimeState("idle", `Local model directory saved: ${value}`);
+    }
     this.schedulePersist();
   }
 
