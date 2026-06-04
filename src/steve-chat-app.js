@@ -22,6 +22,16 @@ const QVAC_RUNTIME_TARGETS = {
   },
 };
 
+const PRISM_RUNTIME_TARGETS = {
+  default: {
+    label: "PrismML llama.cpp Vulkan",
+    endpoint: "http://127.0.0.1:18092",
+    accel: "gpu-capable",
+  },
+};
+
+const SUPPORTED_BACKENDS = ["qvac", "prism", "regular"];
+
 const EMBEDDING_RUNTIME_DEFAULTS = {
   endpoint: "http://127.0.0.1:18086",
   model: "nomic-embed-text-v1.5.Q4_K_M",
@@ -51,6 +61,27 @@ const MODEL_PROFILES = {
     name: "Gemma 4 E4B IT (instruct)",
     memoryGb: 8,
     modelIndex: 6,
+  },
+  bonsai17b: {
+    id: "Ternary-Bonsai-1.7B-Q2_0.gguf",
+    name: "Ternary Bonsai 1.7B Q2_0",
+    memoryGb: 2,
+    modelIndex: 9,
+    preferredBackend: "prism",
+  },
+  bonsai4b: {
+    id: "Ternary-Bonsai-4B-Q2_0.gguf",
+    name: "Ternary Bonsai 4B Q2_0",
+    memoryGb: 4,
+    modelIndex: 10,
+    preferredBackend: "prism",
+  },
+  bonsai8b: {
+    id: "Ternary-Bonsai-8B-Q2_0.gguf",
+    name: "Ternary Bonsai 8B Q2_0",
+    memoryGb: 8,
+    modelIndex: 11,
+    preferredBackend: "prism",
   },
 };
 
@@ -135,9 +166,10 @@ export class SteveChatApp {
     const backend = localStorage.getItem("steve.backend") || "qvac";
     const selectedRuntime = REGULAR_RUNTIME_TARGETS.default;
     const selectedQvacRuntime = QVAC_RUNTIME_TARGETS.default;
+    const selectedPrismRuntime = PRISM_RUNTIME_TARGETS.default;
     const defaultBaseUrl = backend === "qvac"
       ? selectedQvacRuntime.endpoint
-      : selectedRuntime.endpoint;
+      : (backend === "prism" ? selectedPrismRuntime.endpoint : selectedRuntime.endpoint);
     const baseUrl = localStorage.getItem("steve.baseUrl") || defaultBaseUrl;
     const modelDir = localStorage.getItem("steve.modelDir") || "";
     const embeddingBaseUrl = (localStorage.getItem("steve.embeddingBaseUrl") || EMBEDDING_RUNTIME_DEFAULTS.endpoint || baseUrl || "").replace(/\/$/, "");
@@ -256,7 +288,7 @@ export class SteveChatApp {
     this.ensureStateDefaults();
     this.ensureDocUiRefs();
 
-    if (!["regular", "qvac"].includes(this.state.backend)) {
+    if (!SUPPORTED_BACKENDS.includes(this.state.backend)) {
       this.state.backend = "regular";
     }
 
@@ -438,13 +470,26 @@ export class SteveChatApp {
     return QVAC_RUNTIME_TARGETS.default;
   }
 
+  getPrismRuntimeTarget() {
+    return PRISM_RUNTIME_TARGETS.default;
+  }
+
   getBackendEndpoint() {
     if (this.state.backend === "qvac") return this.getQvacRuntimeTarget().endpoint;
+    if (this.state.backend === "prism") return this.getPrismRuntimeTarget().endpoint;
     return this.getRuntimeTarget().endpoint;
   }
 
   getBackendLabel() {
-    return this.state.backend === "qvac" ? this.getQvacRuntimeTarget().label : this.getRuntimeTarget().label;
+    if (this.state.backend === "qvac") return this.getQvacRuntimeTarget().label;
+    if (this.state.backend === "prism") return this.getPrismRuntimeTarget().label;
+    return this.getRuntimeTarget().label;
+  }
+
+  getRuntimeSwitchTarget() {
+    if (this.state.backend === "qvac") return "qvac-vulkan";
+    if (this.state.backend === "prism") return "prism-vulkan";
+    return "reg-prebuilt";
   }
 
   parsePortFromBaseUrl() {
@@ -457,7 +502,9 @@ export class SteveChatApp {
   }
 
   async notifyGpuFallbackIfNeeded() {
-    const target = this.state.backend === "qvac" ? this.getQvacRuntimeTarget() : this.getRuntimeTarget();
+    const target = this.state.backend === "qvac"
+      ? this.getQvacRuntimeTarget()
+      : (this.state.backend === "prism" ? this.getPrismRuntimeTarget() : this.getRuntimeTarget());
     if (target?.accel !== "gpu-capable") return;
 
     const port = this.parsePortFromBaseUrl();
@@ -470,7 +517,7 @@ export class SteveChatApp {
   }
 
   setBackend(backend) {
-    if (!["regular", "qvac"].includes(backend)) return;
+    if (!SUPPORTED_BACKENDS.includes(backend)) return;
     this.state.backend = backend;
     localStorage.setItem("steve.backend", backend);
 
@@ -1575,7 +1622,15 @@ export class SteveChatApp {
       return;
     }
 
-    this.els.docFileInput.click();
+    try {
+      if (typeof this.els.docFileInput.showPicker === "function") {
+        this.els.docFileInput.showPicker();
+      } else {
+        this.els.docFileInput.click();
+      }
+    } catch (err) {
+      this.setRuntimeState("error", `Document picker could not open: ${String(err?.message || err)}`);
+    }
   }
 
   clearLoadedDocument({ silent = false } = {}) {
@@ -2420,7 +2475,7 @@ export class SteveChatApp {
     this.els.runtimeStatus.textContent = `${clippedStatus}${gpuNote}`.trim();
 
     if (this.els.sessionBackendLabel) {
-      const backendName = this.state.backend === "qvac" ? "QVAC" : "Regular";
+      const backendName = this.state.backend === "qvac" ? "QVAC" : (this.state.backend === "prism" ? "PrismML" : "Regular");
       this.els.sessionBackendLabel.textContent = `Backend: ${backendName}`;
     }
 
@@ -3076,11 +3131,14 @@ export class SteveChatApp {
   async applyModelProfile(profileKeyInput = null) {
     const profileKey = profileKeyInput || this.els.modelProfileSelect?.value || "e4b";
     const profile = MODEL_PROFILES[profileKey] || MODEL_PROFILES.e4b;
+    if (profile.preferredBackend && this.state.backend !== profile.preferredBackend) {
+      this.setBackend(profile.preferredBackend);
+    }
     this.state.modelProfile = profileKey;
     if (this.els.modelProfileSelect) this.els.modelProfileSelect.value = profileKey;
     localStorage.setItem("steve.modelProfile", profileKey);
 
-    const target = this.state.backend === "qvac" ? "qvac-vulkan" : "reg-prebuilt";
+    const target = this.getRuntimeSwitchTarget();
     this.setRuntimeState("working", `Applying ${profile.name} on ${this.getBackendLabel()}...`);
 
     try {
@@ -3391,7 +3449,7 @@ export class SteveChatApp {
       // Auto-recovery: only for true endpoint/network failures, not loading-model warmups.
       if (localEndpoint && transient && allowAutoRecover && this.shouldAttemptRuntimeAutoRecover(msg)) {
         const profile = MODEL_PROFILES[this.state.modelProfile] || MODEL_PROFILES.e4b;
-        const target = this.state.backend === "qvac" ? "qvac-vulkan" : "reg-prebuilt";
+        const target = this.getRuntimeSwitchTarget();
 
         try {
           this.setRuntimeState("working", `Runtime unreachable, attempting auto-start (${this.getBackendLabel()}, ${profile.name})...`);
@@ -3468,7 +3526,7 @@ export class SteveChatApp {
     if (!endpoint || endpoint !== this.getBackendEndpoint()) return false;
 
     const profile = MODEL_PROFILES[this.state.modelProfile] || MODEL_PROFILES.e4b;
-    const target = this.state.backend === "qvac" ? "qvac-vulkan" : "reg-prebuilt";
+    const target = this.getRuntimeSwitchTarget();
 
     try {
       this.setRuntimeState("working", `Runtime seems down (${reason}). Attempting auto-start on ${this.getBackendLabel()}...`);

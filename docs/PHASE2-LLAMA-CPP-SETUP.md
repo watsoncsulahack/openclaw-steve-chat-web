@@ -7,6 +7,7 @@ This project is wired to use local OpenAI-compatible endpoints:
 - Regular llama.cpp (local Vulkan build): `http://127.0.0.1:18083`
 - QVAC CPU build: `http://127.0.0.1:18081`
 - QVAC Vulkan build: `http://127.0.0.1:18084`
+- PrismML llama.cpp Vulkan build: `http://127.0.0.1:18092`
 
 `llama-server` (from `ggml-org/llama.cpp`) is already available on this host at:
 
@@ -16,6 +17,12 @@ Gemma models discovered on device:
 
 - `/storage/emulated/0/OpenClawHub/models/gemma-3n-E2B-it-UD-Q4_K_XL.gguf`
 - `/storage/emulated/0/OpenClawHub/models/gemma-3n-E4B-it-UD-Q4_K_XL.gguf`
+
+Ternary Bonsai models downloaded for PrismML Vulkan testing:
+
+- `/root/.openclaw/workspace/models/prismml/Ternary-Bonsai-1.7B-Q2_0.gguf`
+- `/root/.openclaw/workspace/models/prismml/Ternary-Bonsai-4B-Q2_0.gguf`
+- `/root/.openclaw/workspace/models/prismml/Ternary-Bonsai-8B-Q2_0.gguf`
 
 ## Helper script
 
@@ -31,12 +38,13 @@ Use:
 - `scripts/llama_cpp_local.sh status --backend qvac`
 - `scripts/llama_cpp_local.sh stop --backend regular`
 - `scripts/llama_cpp_local.sh stop --backend qvac`
-- `scripts/switch_runtime_target.sh <reg-prebuilt|reg-cpu|reg-vulkan|qvac-cpu|qvac-vulkan>`
+- `scripts/switch_runtime_target.sh <reg-prebuilt|reg-cpu|reg-vulkan|qvac-cpu|qvac-vulkan|prism-vulkan>`
 
 Backend defaults:
 - regular (prebuilt): port `18080`
 - qvac cpu: port `18081`
 - qvac vulkan: port `18084`
+- prism vulkan: port `18092`
 
 Regular runtime target ports used by the Settings picker:
 - prebuilt: `18080`
@@ -46,6 +54,9 @@ Regular runtime target ports used by the Settings picker:
 QVAC runtime target ports used by the Settings picker:
 - qvac cpu: `18081`
 - qvac vulkan: `18084`
+
+PrismML runtime target ports used by the Settings picker:
+- prism vulkan: `18092`
 
 Mode defaults:
 - `--mode gpu` => `--n-gpu-layers 99`
@@ -58,17 +69,28 @@ Mode defaults:
    - On this device class, run one target at a time (use `scripts/switch_runtime_target.sh`) to avoid OOM/futex crashes from multiple concurrent servers.
 2. Open Steve Chat (`http://127.0.0.1:8104`).
 3. Open Settings.
-4. Pick backend (**Regular llama.cpp** or **QVAC fabric llama.cpp**).
+4. Pick backend (**Regular llama.cpp**, **QVAC fabric llama.cpp**, or **PrismML llama.cpp Vulkan**).
 5. Pick runtime target:
    - Regular backend: **Prebuilt / CPU build / Vulkan build**
    - QVAC backend: **QVAC CPU / QVAC Vulkan**
+   - PrismML backend: **PrismML Vulkan**
 6. Click **Connect local …**.
 7. Verify model(s) detected and select in the model picker.
 8. Send a test prompt in **Local Runtime** mode.
 
 ## Notes on model selection
 
-`llama-server` serves one model per process. To switch between E2B/E4B, run script `restart` with a different model index/path.
+`llama-server` serves one model per process. To switch between profiles, run script `restart` with a different model index/path.
+
+Steve Chat model indexes:
+
+- `1`: Gemma 3n E2B
+- `2`: Gemma 3n E4B
+- `5`: Gemma 4 E2B IT
+- `6`: Gemma 4 E4B IT
+- `9`: Ternary Bonsai 1.7B Q2_0
+- `10`: Ternary Bonsai 4B Q2_0
+- `11`: Ternary Bonsai 8B Q2_0
 
 ## QVAC binary note
 

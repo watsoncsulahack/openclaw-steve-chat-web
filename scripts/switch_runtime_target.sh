@@ -15,6 +15,7 @@ REG_CPU_BIN="${REG_CPU_BIN:-/tmp/llama-b8419/build-openclaw-cpu-nossl/bin/llama-
 REG_VK_BIN="${REG_VK_BIN:-/tmp/llama-org-phase2b/out/llama-org-b8419-linux-arm64-vulkan/llama-server}"
 QVAC_CPU_BIN="${QVAC_CPU_BIN:-}"
 QVAC_VK_BIN="${QVAC_VK_BIN:-}"
+PRISM_VK_BIN="${PRISM_VK_BIN:-}"
 
 pick_first_executable() {
   local c
@@ -38,10 +39,19 @@ if [[ -z "$QVAC_VK_BIN" ]]; then
     /data/data/com.termux/files/home/openclaw-binaries/qvac-run-23392440400/android-bionic-vulkan/llama-server || true)"
 fi
 
+if [[ -z "$PRISM_VK_BIN" ]]; then
+  PRISM_VK_BIN="$(pick_first_executable \
+    /data/data/com.termux/files/home/openclaw-binaries/prism-llama.cpp/build-termux-vulkan/bin/llama-server \
+    /data/data/com.termux/files/home/openclaw-binaries/prismml-qvac-actions-e2a636e/llama-server || true)"
+fi
+
 GEMMA_E2B_PATH="${GEMMA_E2B_PATH:-/storage/emulated/0/OpenClawHub/models/gemma-3n-E2B-it-UD-Q4_K_XL.gguf}"
 GEMMA_E4B_PATH="${GEMMA_E4B_PATH:-/storage/emulated/0/OpenClawHub/models/gemma-3n-E4B-it-UD-Q4_K_XL.gguf}"
 GEMMA4_E2B_PATH="${GEMMA4_E2B_PATH:-/storage/emulated/0/OpenClawHub/models/gemma-4-E2B-it-Q4_K_M.gguf}"
 GEMMA4_E4B_PATH="${GEMMA4_E4B_PATH:-/storage/emulated/0/OpenClawHub/models/gemma-4-E4B-it-Q4_K_M.gguf}"
+BONSAI_17B_PATH="${BONSAI_17B_PATH:-/root/.openclaw/workspace/models/prismml/Ternary-Bonsai-1.7B-Q2_0.gguf}"
+BONSAI_4B_PATH="${BONSAI_4B_PATH:-/root/.openclaw/workspace/models/prismml/Ternary-Bonsai-4B-Q2_0.gguf}"
+BONSAI_8B_PATH="${BONSAI_8B_PATH:-/root/.openclaw/workspace/models/prismml/Ternary-Bonsai-8B-Q2_0.gguf}"
 EMBED_MODEL_PATH="${EMBED_MODEL_PATH:-/storage/emulated/0/OpenClawHub/models/nomic-embed-text-v1.5.Q4_K_M.gguf}"
 EMBED_ENABLE="${EMBED_ENABLE:-1}"
 EMBED_PORT="${EMBED_PORT:-18086}"
@@ -66,6 +76,15 @@ resolve_model_path() {
     6|8)
       echo "$GEMMA4_E4B_PATH"
       ;;
+    9)
+      echo "$BONSAI_17B_PATH"
+      ;;
+    10)
+      echo "$BONSAI_4B_PATH"
+      ;;
+    11)
+      echo "$BONSAI_8B_PATH"
+      ;;
     *)
       # Default to E4B profile for unknown indexes.
       echo "$GEMMA_E4B_PATH"
@@ -89,6 +108,15 @@ resolve_model_runtime_defaults() {
       ;;
     2|4)
       echo "ctx=3072 ngl=68 threads=3"
+      ;;
+    9)
+      echo "ctx=4096 ngl=99 threads=3"
+      ;;
+    10)
+      echo "ctx=3072 ngl=99 threads=3"
+      ;;
+    11)
+      echo "ctx=2048 ngl=99 threads=4"
       ;;
     *)
       echo "ctx=3072 ngl=68 threads=3"
@@ -123,6 +151,7 @@ Targets:
   reg-vulkan     # regular vulkan build on 18083 (gpu mode)
   qvac-cpu       # qvac cpu build on 18081 (cpu mode)
   qvac-vulkan    # qvac vulkan build on 18084 (gpu mode)
+  prism-vulkan   # PrismML llama.cpp Vulkan build on 18092 (gpu mode)
 
 Example:
   ./scripts/switch_runtime_target.sh qvac-vulkan
@@ -148,6 +177,7 @@ stop_all() {
   env QVAC_LLAMA_PORT=18081 bash "$LAUNCHER" stop --backend qvac || true
   env QVAC_LLAMA_PORT=18084 bash "$LAUNCHER" stop --backend qvac || true
   env QVAC_LLAMA_PORT="$EMBED_PORT" bash "$LAUNCHER" stop --backend qvac || true
+  env LLAMA_CPP_PORT=18092 bash "$LAUNCHER" stop --backend regular || true
 }
 
 need_bin() {
@@ -232,6 +262,16 @@ case "$TARGET" in
     NEED_EMBED_SIDECAR=1
     EMBED_BIN="$QVAC_VK_BIN"
     ;;
+  prism-vulkan)
+    need_bin "PrismML Vulkan" "$PRISM_VK_BIN"
+    env LLAMA_CPP_BIN="$PRISM_VK_BIN" LLAMA_CPP_PORT=18092 \
+      LLAMA_CPP_N_GPU_LAYERS="${LLAMA_CPP_N_GPU_LAYERS:-$CHAT_NGL_DEFAULT}" \
+      LLAMA_CPP_CTX="${LLAMA_CPP_CTX:-$CHAT_CTX_DEFAULT}" LLAMA_CPP_THREADS="${LLAMA_CPP_THREADS:-$CHAT_THREADS_DEFAULT}" \
+      LLAMA_EMBEDDINGS_ENABLE="${LLAMA_EMBEDDINGS_ENABLE:-1}" LLAMA_EMBEDDINGS_POOLING="${LLAMA_EMBEDDINGS_POOLING:-mean}" \
+      LLAMA_MODEL_ALIAS="$(basename "$MODEL_PATH_OVERRIDE" .gguf)" \
+      LLAMA_EXTRA_ARGS="${LLAMA_EXTRA_ARGS:---parallel 1 --no-cont-batching}" \
+      bash "$LAUNCHER" start --backend regular --mode gpu --model "$MODEL_PATH_OVERRIDE"
+    ;;
   *)
     usage
     exit 1
@@ -243,7 +283,7 @@ if [[ "$NEED_EMBED_SIDECAR" == "1" ]]; then
 fi
 
 echo "\nActive endpoint(s):"
-for p in 18080 18082 18083 18081 18084 "$EMBED_PORT"; do
+for p in 18080 18082 18083 18081 18084 18092 "$EMBED_PORT"; do
   code="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${p}/v1/models" || true)"
   if [[ "$code" == "200" ]]; then
     echo "  - $p (OK)"

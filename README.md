@@ -32,8 +32,8 @@ Open:
 From the **Settings** button (⚙):
 
 1. Set base URL (default `http://127.0.0.1:18084`)
-2. Pick backend from dropdown (**Regular** or **QVAC fabric**)
-3. Pick local model profile (**E2B** or **E4B/4B**) and tap **Apply model**
+2. Pick backend from dropdown (**Regular**, **QVAC fabric**, or **PrismML Vulkan**)
+3. Pick local model profile (**Gemma** or **Ternary Bonsai**) and tap **Apply model**
 4. Tap **Detect** to load local models
 5. Tune chat sampling/perf settings in **Chat defaults**:
    - temperature, top-k, top-p, min-p, typical-p, repeat penalty, max tokens
@@ -54,6 +54,7 @@ This repo includes a helper script to run either backend:
 - **regular local Vulkan build** on `127.0.0.1:18083`
 - **qvac CPU build** on `127.0.0.1:18081`
 - **qvac Vulkan build** on `127.0.0.1:18084`
+- **PrismML llama.cpp Vulkan build** on `127.0.0.1:18092`
 
 ```bash
 ./scripts/llama_cpp_local.sh list-models
@@ -90,12 +91,19 @@ Recommended for phone testing: run **one target at a time** (stops others first)
 ```bash
 ./scripts/switch_runtime_target.sh reg-vulkan
 ./scripts/switch_runtime_target.sh qvac-vulkan
+MODEL_INDEX=9 ./scripts/switch_runtime_target.sh prism-vulkan
 ```
 
 Then in Steve Chat Settings:
-1. choose backend (Regular or QVAC)
-2. choose model profile (E2B or E4B) and tap **Apply model**
+1. choose backend (Regular, QVAC, or PrismML)
+2. choose model profile (Gemma or Ternary Bonsai) and tap **Apply model**
 3. tap **Connect local …** to set endpoint + detect models.
+
+The Ternary Bonsai profiles are mapped to the PrismML Vulkan runtime:
+
+- `bonsai17b` / model index `9`: `/root/.openclaw/workspace/models/prismml/Ternary-Bonsai-1.7B-Q2_0.gguf`
+- `bonsai4b` / model index `10`: `/root/.openclaw/workspace/models/prismml/Ternary-Bonsai-4B-Q2_0.gguf`
+- `bonsai8b` / model index `11`: `/root/.openclaw/workspace/models/prismml/Ternary-Bonsai-8B-Q2_0.gguf`
 
 Build helper for upstream llama.cpp arm64 CPU/Vulkan artifacts: `scripts/phase2b_build_llama_org_arm64.sh`
 

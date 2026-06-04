@@ -429,7 +429,8 @@ export class RuntimeClient {
         signal: controller.signal,
       });
     } catch (err) {
-      const guessedPort = String(target || "").startsWith("reg") ? 18080 : 18084;
+      const targetName = String(target || "");
+      const guessedPort = targetName.startsWith("reg") ? 18080 : (targetName.startsWith("prism") ? 18092 : 18084);
       const guessedEndpoint = `http://127.0.0.1:${guessedPort}`;
       const fetchLike = /Failed to fetch|NetworkError|fetch|ECONN|connection/i.test(String(err?.message || ""));
       const shouldProbeFallback = err?.name === "AbortError" || fetchLike;
