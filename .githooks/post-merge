@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo="$(git rev-parse --show-toplevel)"
+"$repo/scripts/sync_web_studio_repo.sh" "$repo"
