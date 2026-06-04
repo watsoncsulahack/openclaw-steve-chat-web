@@ -54,7 +54,7 @@ SOURCE_COMMIT="$(git -C "$SOURCE_REPO" rev-parse HEAD)"
 SOURCE_SHORT="$(git -C "$SOURCE_REPO" rev-parse --short HEAD)"
 SOURCE_BRANCH="$(git -C "$SOURCE_REPO" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
 
-DEST_DIRTY="$(git -C "$DEST_PATH" status --porcelain | awk '$1 != "??" || $2 !~ /^data\\//')"
+DEST_DIRTY="$(git -C "$DEST_PATH" status --porcelain | awk '$1 != "??" || index($2, "data/") != 1')"
 if [[ -n "$DEST_DIRTY" && "${WEB_STUDIO_SYNC_ALLOW_DIRTY:-0}" != "1" ]]; then
   fail "Web Studio copy has local changes; refusing to overwrite $DEST_PATH"
 fi
