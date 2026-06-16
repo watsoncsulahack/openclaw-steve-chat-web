@@ -83,6 +83,20 @@ const MODEL_PROFILES = {
     modelIndex: 11,
     preferredBackend: "prism",
   },
+  lfm25Instruct12b: {
+    id: "LFM2.5-1.2B-Instruct-Q4_K_M.gguf",
+    name: "LFM2.5 1.2B Instruct Q4_K_M",
+    memoryGb: 2,
+    modelIndex: 12,
+    preferredBackend: "prism",
+  },
+  lfm25Thinking12b: {
+    id: "LFM2.5-1.2B-Thinking-Q4_K_M.gguf",
+    name: "LFM2.5 1.2B Thinking Q4_K_M",
+    memoryGb: 2,
+    modelIndex: 13,
+    preferredBackend: "prism",
+  },
 };
 
 const CHAT_TEMPLATE_PRESETS = {

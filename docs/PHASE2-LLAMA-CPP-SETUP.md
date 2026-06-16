@@ -24,6 +24,11 @@ Ternary Bonsai models downloaded for PrismML Vulkan testing:
 - `/root/.openclaw/workspace/models/prismml/Ternary-Bonsai-4B-Q2_0.gguf`
 - `/root/.openclaw/workspace/models/prismml/Ternary-Bonsai-8B-Q2_0.gguf`
 
+LFM2.5 models downloaded for PrismML Vulkan testing:
+
+- `/data/data/com.termux/files/home/models/LFM2.5-1.2B-Instruct-Q4_K_M.gguf`
+- `/data/data/com.termux/files/home/models/LFM2.5-1.2B-Thinking-Q4_K_M.gguf`
+
 ## Helper script
 
 Use:
@@ -91,6 +96,8 @@ Steve Chat model indexes:
 - `9`: Ternary Bonsai 1.7B Q2_0
 - `10`: Ternary Bonsai 4B Q2_0
 - `11`: Ternary Bonsai 8B Q2_0
+- `12`: LFM2.5 1.2B Instruct Q4_K_M
+- `13`: LFM2.5 1.2B Thinking Q4_K_M
 
 ## QVAC binary note
 

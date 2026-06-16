@@ -52,6 +52,8 @@ GEMMA4_E4B_PATH="${GEMMA4_E4B_PATH:-/storage/emulated/0/OpenClawHub/models/gemma
 BONSAI_17B_PATH="${BONSAI_17B_PATH:-/root/.openclaw/workspace/models/prismml/Ternary-Bonsai-1.7B-Q2_0.gguf}"
 BONSAI_4B_PATH="${BONSAI_4B_PATH:-/root/.openclaw/workspace/models/prismml/Ternary-Bonsai-4B-Q2_0.gguf}"
 BONSAI_8B_PATH="${BONSAI_8B_PATH:-/root/.openclaw/workspace/models/prismml/Ternary-Bonsai-8B-Q2_0.gguf}"
+LFM25_INSTRUCT_12B_PATH="${LFM25_INSTRUCT_12B_PATH:-/data/data/com.termux/files/home/models/LFM2.5-1.2B-Instruct-Q4_K_M.gguf}"
+LFM25_THINKING_12B_PATH="${LFM25_THINKING_12B_PATH:-/data/data/com.termux/files/home/models/LFM2.5-1.2B-Thinking-Q4_K_M.gguf}"
 EMBED_MODEL_PATH="${EMBED_MODEL_PATH:-/storage/emulated/0/OpenClawHub/models/nomic-embed-text-v1.5.Q4_K_M.gguf}"
 EMBED_ENABLE="${EMBED_ENABLE:-1}"
 EMBED_PORT="${EMBED_PORT:-18086}"
@@ -85,6 +87,12 @@ resolve_model_path() {
     11)
       echo "$BONSAI_8B_PATH"
       ;;
+    12)
+      echo "$LFM25_INSTRUCT_12B_PATH"
+      ;;
+    13)
+      echo "$LFM25_THINKING_12B_PATH"
+      ;;
     *)
       # Default to E4B profile for unknown indexes.
       echo "$GEMMA_E4B_PATH"
@@ -117,6 +125,9 @@ resolve_model_runtime_defaults() {
       ;;
     11)
       echo "ctx=2048 ngl=99 threads=4"
+      ;;
+    12|13)
+      echo "ctx=4096 ngl=99 threads=3"
       ;;
     *)
       echo "ctx=3072 ngl=68 threads=3"
