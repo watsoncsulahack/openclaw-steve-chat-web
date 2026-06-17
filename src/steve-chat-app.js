@@ -745,8 +745,8 @@ export class SteveChatApp {
       this.state.reasoningEnabled = Boolean(e.target.checked);
       localStorage.setItem("steve.reasoningEnabled", this.state.reasoningEnabled ? "1" : "0");
       this.setRuntimeState("idle", this.state.reasoningEnabled
-        ? "Reasoning enabled (runtime will emit reasoning when model supports it)."
-        : "Reasoning disabled.");
+        ? "Thinking enabled (runtime will emit thinking when model supports it)."
+        : "Thinking disabled.");
       this.schedulePersist();
       this.renderMessages();
     });
@@ -2079,16 +2079,63 @@ export class SteveChatApp {
     return out.trim();
   }
 
+  splitThinkingFromContent(content = "", explicitThinking = "") {
+    let body = String(content || "");
+    const thinkingParts = [];
+    const explicit = String(explicitThinking || "").trim();
+    if (explicit) thinkingParts.push(explicit);
+
+    const extractDelimited = (text, startPattern, endPattern) => {
+      let out = "";
+      let cursor = 0;
+
+      while (cursor < text.length) {
+        startPattern.lastIndex = cursor;
+        const start = startPattern.exec(text);
+        if (!start) {
+          out += text.slice(cursor);
+          break;
+        }
+
+        out += text.slice(cursor, start.index);
+        const thinkingStart = startPattern.lastIndex;
+        endPattern.lastIndex = thinkingStart;
+        const end = endPattern.exec(text);
+        if (!end) {
+          thinkingParts.push(text.slice(thinkingStart));
+          cursor = text.length;
+          break;
+        }
+
+        thinkingParts.push(text.slice(thinkingStart, end.index));
+        cursor = endPattern.lastIndex;
+      }
+
+      return out;
+    };
+
+    body = extractDelimited(body, /<think\b[^>]*>/gi, /<\/think>/gi);
+    body = extractDelimited(body, /<\|START_THINKING\|>/gi, /<\|END_THINKING\|>/gi);
+
+    return {
+      content: body,
+      thinking: thinkingParts
+        .map((part) => this.sanitizeModelTemplateSlop(part))
+        .filter(Boolean)
+        .join("\n\n"),
+    };
+  }
+
   composeAssistantParts({ content = "", reasoning = "" } = {}) {
-    const cleanContentRaw = String(content || "").trim();
-    const cleanReasoningRaw = String(reasoning || "").trim();
+    const split = this.splitThinkingFromContent(content, reasoning);
+    const cleanContentRaw = String(split.content || "").trim();
     const cleanContent = this.sanitizeModelTemplateSlop(cleanContentRaw);
     const cleanReasoning = this.state.reasoningEnabled
-      ? this.sanitizeModelTemplateSlop(cleanReasoningRaw)
+      ? this.sanitizeModelTemplateSlop(split.thinking)
       : "";
 
     return {
-      text: cleanContent || (cleanContentRaw ? "(template tokens filtered)" : "(empty reply)"),
+      text: cleanContent || (cleanReasoning ? "" : (cleanContentRaw ? "(template tokens filtered)" : "(empty reply)")),
       reasoningText: cleanReasoning,
     };
   }
@@ -2137,28 +2184,47 @@ export class SteveChatApp {
 
       if (msg.role === "steve" && this.state.reasoningEnabled && msg.reasoningText) {
         const reasoningWrap = document.createElement("details");
-        reasoningWrap.className = "reasoning-block";
+        reasoningWrap.className = "thinking-block";
         reasoningWrap.open = true;
 
         const summary = document.createElement("summary");
-        summary.textContent = "Reasoning";
+        const summaryLabel = document.createElement("span");
+        summaryLabel.className = "thinking-label";
+        const cog = document.createElement("span");
+        cog.className = "thinking-cog";
+        cog.textContent = "⚙";
+        cog.setAttribute("aria-hidden", "true");
+        summaryLabel.append(cog, document.createTextNode(" Thinking"));
+        summary.appendChild(summaryLabel);
+
+        const thinkingTps = msg.thinkingTps ?? (msg.pending ? msg.tps : null);
+        if (thinkingTps != null) {
+          const n = Number(thinkingTps);
+          const metric = document.createElement("span");
+          metric.className = "thinking-tps";
+          metric.textContent = `${Number.isFinite(n) ? (n >= 10 ? n.toFixed(0) : n.toFixed(1)) : "--"} tok/s`;
+          summary.appendChild(metric);
+        }
+
         reasoningWrap.appendChild(summary);
 
         const reasoningBody = document.createElement("div");
-        reasoningBody.className = "reasoning-body msg-body";
+        reasoningBody.className = "thinking-body msg-body";
         reasoningBody.innerHTML = this.renderMarkdownHtml(this.sanitizeModelTemplateSlop(msg.reasoningText));
         reasoningWrap.appendChild(reasoningBody);
 
         bubble.appendChild(reasoningWrap);
       }
 
-      const body = document.createElement("div");
-      body.className = "msg-body";
       const displayText = msg.role === "steve"
         ? this.sanitizeModelTemplateSlop(msg.text)
         : String(msg.text || "");
-      body.innerHTML = this.renderMarkdownHtml(displayText);
-      bubble.appendChild(body);
+      if (displayText || msg.role !== "steve" || !msg.reasoningText) {
+        const body = document.createElement("div");
+        body.className = "msg-body";
+        body.innerHTML = this.renderMarkdownHtml(displayText);
+        bubble.appendChild(body);
+      }
 
       if (msg.role === "steve" && (msg.tps != null || msg.energyMWh != null)) {
         const meta = document.createElement("div");
@@ -2326,20 +2392,20 @@ export class SteveChatApp {
     }
 
     let selectable = true;
-    let hintText = "Runtime reasoning output can be toggled when selected model supports it.";
+    let hintText = "Runtime thinking output can be toggled when selected model supports it.";
 
     if (capability === "checking") {
       selectable = false;
-      hintText = "Checking reasoning compatibility for selected model…";
+      hintText = "Checking thinking compatibility for selected model…";
     } else if (capability === "unsupported") {
       selectable = false;
-      hintText = "Reasoning output unavailable for current model/runtime response mode.";
+      hintText = "Thinking output unavailable for current model/runtime response mode.";
     } else if (capability === "supported") {
       selectable = true;
-      hintText = "Reasoning output available for this model.";
+      hintText = "Thinking output available for this model.";
     } else {
       selectable = false;
-      hintText = "Reasoning compatibility not verified yet.";
+      hintText = "Thinking compatibility not verified yet.";
     }
 
     input.disabled = !selectable;
@@ -2420,7 +2486,7 @@ export class SteveChatApp {
       const probe = await this.withRuntimeRetry(() => this.runtimeClient.completeOnce({
         baseUrl: this.state.baseUrl,
         model: modelId,
-        messages: [{ role: "user", content: "Solve 19+23 and show short reasoning then final answer." }],
+        messages: [{ role: "user", content: "Solve 19+23 and show short thinking then final answer." }],
         maxTokens: 96,
         temperature: 0,
         topP: 0.9,
@@ -2434,7 +2500,7 @@ export class SteveChatApp {
         signal: probeSignal,
         baseUrl: this.state.baseUrl,
         attempts: 2,
-        phaseLabel: "Reasoning capability probe",
+        phaseLabel: "Thinking capability probe",
         allowAutoRecover: false,
         suppressStatus: true,
       });
@@ -2461,10 +2527,8 @@ export class SteveChatApp {
     const id = String(modelId || this.state.selectedModel || "").trim();
     if (!id) return;
 
-    const body = String(content || "").trim();
-    const reason = String(reasoning || "").trim();
-    const hasReasoningTag = /<think>|<\|START_THINKING\|>|<\|END_THINKING\|>/i.test(body);
-    const supported = Boolean(reason) || hasReasoningTag;
+    const split = this.splitThinkingFromContent(content, reasoning);
+    const supported = Boolean(split.thinking);
 
     this.setReasoningCapabilityState(id, supported ? "supported" : "unsupported");
     this.renderReasoningToggleAvailability();
@@ -4179,10 +4243,17 @@ export class SteveChatApp {
               content: streamedText,
               reasoning: streamedReasoning,
             });
+            const thinkingPreviewTokens = display.reasoningText
+              ? Math.max(1, this.estimateTokenCount(display.reasoningText))
+              : 0;
+            const liveThinkingTps = thinkingPreviewTokens > 0
+              ? thinkingPreviewTokens / elapsedSec
+              : null;
 
             this.patchMessage(chatId, assistantIndex, {
               text: display.text,
               reasoningText: display.reasoningText,
+              thinkingTps: liveThinkingTps,
               pending: true,
               error: false,
               tps: liveTps,
@@ -4204,7 +4275,7 @@ export class SteveChatApp {
           phaseLabel: "Stream call",
         });
 
-        if (!streamedText.trim()) {
+        if (!streamedText.trim() && !streamedReasoning.trim()) {
           this.setRuntimeState("working", "Empty stream reply, retrying once...");
           const retry = await this.withRuntimeRetry(() => this.runtimeClient.completeOnce({
             baseUrl: this.state.baseUrl,
@@ -4300,6 +4371,12 @@ export class SteveChatApp {
         const completionTokens = result?.completionTokens ?? Math.max(1, this.estimateTokenCount(`${display.reasoningText}\n${display.text}`));
         const totalTokens = result?.totalTokens ?? (promptTokens + completionTokens);
         const finalTps = completionTokens / Math.max(0.2, elapsedMs / 1000);
+        const thinkingTokens = display.reasoningText
+          ? Math.max(1, this.estimateTokenCount(display.reasoningText))
+          : 0;
+        const finalThinkingTps = thinkingTokens > 0
+          ? thinkingTokens / Math.max(0.2, elapsedMs / 1000)
+          : null;
         const finalPowerMw = this.estimateAutoPowerMw({ text, tps: finalTps, live: true });
         const energyMWh = this.addEnergyUsage(finalPowerMw, elapsedMs);
         this.addTokenUsage({ promptTokens, completionTokens, totalTokens });
@@ -4308,6 +4385,7 @@ export class SteveChatApp {
         this.patchMessage(chatId, assistantIndex, {
           text: display.text,
           reasoningText: display.reasoningText,
+          thinkingTps: finalThinkingTps,
           pending: false,
           error: false,
           excludeFromContext,
@@ -4399,6 +4477,12 @@ export class SteveChatApp {
       const completionTokens = oneShot.completionTokens ?? this.estimateTokenCount(`${display.reasoningText}\n${display.text}`);
       const totalTokens = oneShot.totalTokens ?? (promptTokens + completionTokens);
       const effectiveTps = completionTokens / Math.max(0.2, elapsedMs / 1000);
+      const thinkingTokens = display.reasoningText
+        ? Math.max(1, this.estimateTokenCount(display.reasoningText))
+        : 0;
+      const thinkingTps = thinkingTokens > 0
+        ? thinkingTokens / Math.max(0.2, elapsedMs / 1000)
+        : null;
       const powerMw = this.estimateAutoPowerMw({ text, tps: effectiveTps, live: true });
       const energyMWh = this.addEnergyUsage(powerMw, elapsedMs);
 
@@ -4408,6 +4492,7 @@ export class SteveChatApp {
       this.patchMessage(chatId, assistantIndex, {
         text: display.text,
         reasoningText: display.reasoningText,
+        thinkingTps,
         pending: false,
         error: false,
         excludeFromContext,
@@ -4431,7 +4516,7 @@ export class SteveChatApp {
     } catch (err) {
       const aborted = err?.name === "AbortError" || /aborted|abort/i.test(String(err?.message || ""));
       if (aborted) {
-        const stoppedText = streamedText.trim() || "(generation stopped)";
+        const stoppedText = streamedText.trim() || (streamedReasoning.trim() ? "" : "(generation stopped)");
         const stopped = this.composeAssistantParts({
           content: stoppedText,
           reasoning: streamedReasoning,

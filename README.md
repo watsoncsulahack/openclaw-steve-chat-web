@@ -12,6 +12,7 @@ Mobile-first local chat UI prototype inspired by Allan's sketch (hamburger menu,
   - simplified settings sheet (single list with backend dropdown, model profile dropdown, chat defaults)
   - message composer + mock Steve replies + mock mic button
   - assistant metadata includes live `tokens/s` + power telemetry
+  - thinking-capable models render inline `<think>...</think>` output in a live toggleable Thinking bubble
   - bottom session token counters (total / prompt / completion)
   - optional live wire-up to local OpenAI-compatible endpoint (`/v1/models`, `/v1/chat/completions`)
   - foldable/wide layout: persistent left chat drawer + right chat pane
@@ -109,6 +110,8 @@ The LFM2.5 1.2B profiles are also mapped to the PrismML Vulkan runtime:
 
 - `lfm25Instruct12b` / model index `12`: `/data/data/com.termux/files/home/models/LFM2.5-1.2B-Instruct-Q4_K_M.gguf`
 - `lfm25Thinking12b` / model index `13`: `/data/data/com.termux/files/home/models/LFM2.5-1.2B-Thinking-Q4_K_M.gguf`
+
+The LFM2.5 Thinking profile is parsed as a thinking-capable model when the runtime returns OpenAI-style `reasoning_content` / `thinking` fields or inline `<think>...</think>` / `<|START_THINKING|>...<|END_THINKING|>` text.
 
 Build helper for upstream llama.cpp arm64 CPU/Vulkan artifacts: `scripts/phase2b_build_llama_org_arm64.sh`
 

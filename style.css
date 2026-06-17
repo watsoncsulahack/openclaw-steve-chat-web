@@ -320,15 +320,18 @@ body.theme-light {
   color: #a9c1ff;
 }
 
-.reasoning-block {
+.thinking-block {
   border: 1px dashed rgba(132, 159, 238, 0.65);
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 6px 8px;
   margin-bottom: 8px;
   background: rgba(12, 22, 52, 0.38);
 }
 
-.reasoning-block > summary {
+.thinking-block > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   cursor: pointer;
   font-size: 12px;
   color: #bfd2ff;
@@ -336,8 +339,40 @@ body.theme-light {
   user-select: none;
 }
 
-.reasoning-body {
+.thinking-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-style: italic;
+}
+
+.thinking-cog {
+  display: inline-block;
+  transform-origin: 50% 50%;
+}
+
+.bubble.pending .thinking-cog {
+  animation: thinking-cog-spin 1.1s linear infinite;
+}
+
+.thinking-tps {
+  margin-left: auto;
+  color: #8ea7e8;
+  font-size: 11px;
+  font-style: italic;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.thinking-body {
   margin-top: 6px;
+  font-style: italic;
+}
+
+@keyframes thinking-cog-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .bubble.pending {
@@ -981,13 +1016,17 @@ body.theme-light .swipe-cue-right {
   color: #1f6c4a;
 }
 
-body.theme-light .reasoning-block {
+body.theme-light .thinking-block {
   background: rgba(214, 228, 255, 0.75);
   border-color: rgba(95, 126, 210, 0.75);
 }
 
-body.theme-light .reasoning-block > summary {
+body.theme-light .thinking-block > summary {
   color: #2f4f9a;
+}
+
+body.theme-light .thinking-tps {
+  color: #526fb4;
 }
 
 body.theme-light .bubble-reply {
