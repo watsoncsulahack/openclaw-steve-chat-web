@@ -1,6 +1,6 @@
 # Steve Chat Audio Integration Plan (STT/TTS/Calls)
 
-Last updated (UTC): 2026-03-24
+Last updated (UTC): 2026-06-18
 
 ## Scope order (as requested)
 1. **Now:** Enable/validate reasoning output path in local runtimes.
@@ -12,6 +12,35 @@ Last updated (UTC): 2026-03-24
 
 ## Phase 1 — STT (microphone) integration
 
+### Product direction
+Steve Chat should work as an offline-capable local web app after it has been
+cached in the user's browser. Speech-to-text should therefore be a local model
+workflow, not a long-lived dependency on browser `SpeechRecognition`.
+
+When a user enables STT for the first time, settings should show a model picker
+with practical Whisper-size choices and approximate download sizes:
+
+- Whisper small
+- Whisper medium
+- Whisper large
+
+After the user selects a model, Steve Chat should download or install it through
+the local runtime/sidecar, save the model on disk, and persist the selected
+model directory/path in app configuration visible from Settings. Once configured,
+the normal user workflow is:
+
+1. Tap record.
+2. Show the live waveform meter immediately.
+3. Allow pause/resume while keeping the captured audio session coherent.
+4. On commit, stop capture, transcribe through the selected local STT model, and
+   insert the transcript into the composer for review.
+5. On cancel/exit, stop tracks, abort any pending STT request, reset UI state,
+   and preserve any pre-recording composer text.
+
+Persisting a copy of the audio waveform is deprecated for now. The waveform is a
+live recording affordance only; do not add durable waveform storage until there
+is a concrete review/debug feature that needs it.
+
 ### UX goals
 - Tap mic → start listening indicator
 - Partial transcript preview while speaking
@@ -19,21 +48,32 @@ Last updated (UTC): 2026-03-24
 - Retry/cancel behavior that does not block chat input
 
 ### Tooling options
-1. **Web Speech API (baseline, already partially wired)**
-   - Pros: zero install, fastest to ship
-   - Cons: browser/device variability, cloud dependency on some engines
-2. **On-device Whisper pipeline (local-first)**
-   - Options: `faster-whisper` service, `whisper.cpp` server endpoint
-   - Pros: privacy/local control
-   - Cons: CPU/GPU load, model size and latency tuning
-3. **Android native SpeechRecognizer bridge (WebView app-level)**
-   - Pros: stable on-device UX in app context
-   - Cons: requires native app bridge plumbing
+1. **Local Whisper pipeline (primary)**
+   - Options: `faster-whisper` service, `whisper.cpp` server endpoint, or
+     another local STT sidecar with explicit model install/config APIs.
+   - Pros: offline after setup, private, predictable across browsers.
+   - Cons: model download size, storage, CPU/GPU load, latency tuning.
+2. **Android native SpeechRecognizer bridge (optional fallback)**
+   - Pros: stable app-context UX where local model install is unavailable.
+   - Cons: requires native app bridge plumbing and may not be fully offline.
+3. **Web Speech API (legacy fallback only)**
+   - Pros: zero install.
+   - Cons: browser/device variability, cloud dependency on some engines,
+     long-session failure modes.
 
 ### Recommended path
-- Step A: harden current Web Speech path for UX fallback
-- Step B: add optional local STT endpoint setting (`/v1/audio/transcriptions`-style or custom `/stt`)
-- Step C: add auto-fallback chain (native/web/local endpoint priority)
+- Step A: make recorder + local STT endpoint the source of truth for completed
+  transcriptions; stop treating Web Speech as the primary path.
+- Step B: add Settings UI for STT model status, selected model, model directory,
+  and local STT endpoint health.
+- Step C: add a sidecar API for listing supported STT models with sizes,
+  installing/downloading a selected model, and returning the configured model
+  path.
+- Step D: persist STT config in the same user-visible settings surface used for
+  local runtime and embedding config.
+- Step E: cover edge cases: pause then cancel, pause then commit, close settings
+  while recording, navigate chat while recording, STT endpoint timeout, missing
+  model path, and mic permission denial.
 
 ---
 
