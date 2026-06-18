@@ -145,6 +145,7 @@
             <label class="field-label" for="modelDirInput">Local model directory (for server config)</label>
             <input id="modelDirInput" type="text" placeholder="/path/to/gguf/models" />
             <div class="drawer-row">
+              <button id="browseModelDirBtn" class="secondary">Browse</button>
               <button id="saveModelDirBtn" class="secondary">Save model dir</button>
             </div>
             <label class="field-label" for="backendSelect">Backend</label>
@@ -170,6 +171,7 @@
                 <option value="bonsai8b">Ternary Bonsai 8B Q2_0</option>
                 <option value="lfm25Instruct12b">LFM2.5 1.2B Instruct Q4_K_M</option>
                 <option value="lfm25Thinking12b">LFM2.5 1.2B Thinking Q4_K_M</option>
+                <option value="lfm25MoE8bA1b">LFM2.5 8B-A1B MoE Q4_K_M</option>
               </select>
               <button id="applyModelProfileBtn" class="secondary">Apply model</button>
             </div>
@@ -189,6 +191,7 @@
             <label class="field-label" for="sttModelDirInput">STT model directory</label>
             <input id="sttModelDirInput" type="text" placeholder="Configured after model download" />
             <div class="drawer-row">
+              <button id="browseSttModelDirBtn" class="secondary">Browse</button>
               <button id="saveSttConfigBtn" class="secondary">Save STT</button>
               <button id="testSttBtn" class="secondary">Check STT</button>
             </div>

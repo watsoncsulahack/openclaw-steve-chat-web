@@ -115,6 +115,8 @@ The LFM2.5 1.2B profiles are also mapped to the PrismML Vulkan runtime:
 
 - `lfm25Instruct12b` / model index `12`: `/data/data/com.termux/files/home/models/LFM2.5-1.2B-Instruct-Q4_K_M.gguf`
 - `lfm25Thinking12b` / model index `13`: `/data/data/com.termux/files/home/models/LFM2.5-1.2B-Thinking-Q4_K_M.gguf`
+- `lfm25MoE8bA1b` / model index `15`: `/storage/emulated/0/OpenClawHub/models/LFM2.5-8B-A1B-Q4_K_M.gguf`
+  - Download: `https://huggingface.co/LiquidAI/LFM2.5-8B-A1B-GGUF/resolve/main/LFM2.5-8B-A1B-Q4_K_M.gguf`
 
 The LFM2.5 Thinking profile is parsed as a thinking-capable model when the runtime returns OpenAI-style `reasoning_content` / `thinking` fields or inline `<think>...</think>` / `<|START_THINKING|>...<|END_THINKING|>` text.
 
@@ -122,12 +124,15 @@ The LFM2.5 Thinking profile is parsed as a thinking-capable model when the runti
 
 `serve.sh` starts the local STT sidecar on `127.0.0.1:18777` when the STT venv exists. In Settings, use **Speech to text** to:
 
-1. choose Whisper `small.en` (~466 MB), `medium.en` (~1.5 GB), or `large-v3` (~3.1 GB),
-2. download/install the selected model,
-3. persist the STT endpoint and model directory,
-4. record from the composer and transcribe the completed recording locally.
+1. choose Whisper `small.en` (~465 MB), `medium.en` (~1.43 GB), or `large-v3` (~3.1 GB),
+2. open the selected Whisper browser download link,
+3. use **Browse** to select the download/model folder when the browser or Android bridge exposes it,
+4. persist the STT endpoint and model directory,
+5. record from the composer and transcribe the completed recording locally.
 
 The browser app records with `MediaRecorder` and posts the final audio blob to `/stt/transcribe`. Browser `SpeechRecognition` is no longer the primary transcription path.
+
+Direct STT downloads use whisper.cpp `.bin` files from `ggerganov/whisper.cpp`; the current Python sidecar still transcribes with `faster-whisper`, so native/Android wiring may need to map the selected browser folder into a whisper.cpp-capable transcription backend. The sidecar installer endpoint remains available for faster-whisper cache installs.
 
 Build helper for upstream llama.cpp arm64 CPU/Vulkan artifacts: `scripts/phase2b_build_llama_org_arm64.sh`
 

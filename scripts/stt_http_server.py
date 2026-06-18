@@ -24,9 +24,27 @@ RECORDINGS_DIR = os.environ.get(
 )
 
 STT_MODELS = [
-    {"id": "small.en", "name": "Whisper small.en", "sizeMb": 466},
-    {"id": "medium.en", "name": "Whisper medium.en", "sizeMb": 1500},
-    {"id": "large-v3", "name": "Whisper large-v3", "sizeMb": 3100},
+    {
+        "id": "small.en",
+        "name": "Whisper small.en",
+        "sizeMb": 465,
+        "downloadUrl": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin",
+        "downloadFile": "ggml-small.en.bin",
+    },
+    {
+        "id": "medium.en",
+        "name": "Whisper medium.en",
+        "sizeMb": 1463,
+        "downloadUrl": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.en.bin",
+        "downloadFile": "ggml-medium.en.bin",
+    },
+    {
+        "id": "large-v3",
+        "name": "Whisper large-v3",
+        "sizeMb": 3100,
+        "downloadUrl": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin",
+        "downloadFile": "ggml-large-v3.bin",
+    },
 ]
 DEFAULT_MODEL = os.environ.get("STT_MODEL", "small.en")
 
@@ -177,9 +195,10 @@ class Handler(BaseHTTPRequestHandler):
                 body = self.rfile.read(length)
                 payload = json.loads(body.decode("utf-8") or "{}")
                 model = str(payload.get("model") or _load_config()["model"])
+                model_dir = str(payload.get("modelDir") or _load_config()["modelDir"] or MODEL_DIR)
                 if model not in _model_ids():
                     return self._json(400, {"ok": False, "error": "unknown_model"})
-                config = _save_config({"model": model, "modelDir": MODEL_DIR})
+                config = _save_config({"model": model, "modelDir": model_dir})
                 os.makedirs(config["modelDir"], exist_ok=True)
                 subprocess.check_output(
                     [VENV_PY, STT_SCRIPT, "--help"],

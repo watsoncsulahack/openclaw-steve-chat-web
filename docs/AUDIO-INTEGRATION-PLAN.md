@@ -20,14 +20,19 @@ workflow, not a long-lived dependency on browser `SpeechRecognition`.
 When a user enables STT for the first time, settings should show a model picker
 with practical Whisper-size choices and approximate download sizes:
 
-- Whisper small
-- Whisper medium
-- Whisper large
+- Whisper small.en (~465 MB)
+- Whisper medium.en (~1.43 GB)
+- Whisper large-v3 (~3.1 GB)
 
-After the user selects a model, Steve Chat should download or install it through
-the local runtime/sidecar, save the model on disk, and persist the selected
-model directory/path in app configuration visible from Settings. Once configured,
-the normal user workflow is:
+After the user selects a model, Steve Chat should open the verified model
+download link and let the active Android/browser download flow save it to the
+normal download location. Settings should expose **Browse** controls for the chat
+model directory and STT model directory. In a native Android bridge, Browse should
+return a real filesystem path/URI; in a normal browser, it may only return a
+File System Access directory handle/name, so the UI must not pretend that a full
+sidecar-readable path is available when the browser does not expose one.
+
+Once configured, the normal user workflow is:
 
 1. Tap record.
 2. Show the live waveform meter immediately.
@@ -65,7 +70,7 @@ is a concrete review/debug feature that needs it.
 - Step A: make recorder + local STT endpoint the source of truth for completed
   transcriptions; stop treating Web Speech as the primary path.
 - Step B: add Settings UI for STT model status, selected model, model directory,
-  and local STT endpoint health.
+  directory Browse, direct download, and local STT endpoint health.
 - Step C: add a sidecar API for listing supported STT models with sizes,
   installing/downloading a selected model, and returning the configured model
   path.

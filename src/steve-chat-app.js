@@ -44,9 +44,27 @@ const STT_RUNTIME_DEFAULTS = {
 };
 
 const STT_MODEL_OPTIONS = {
-  "small.en": { id: "small.en", name: "Whisper small.en", sizeMb: 466 },
-  "medium.en": { id: "medium.en", name: "Whisper medium.en", sizeMb: 1500 },
-  "large-v3": { id: "large-v3", name: "Whisper large-v3", sizeMb: 3100 },
+  "small.en": {
+    id: "small.en",
+    name: "Whisper small.en",
+    sizeMb: 465,
+    downloadUrl: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin",
+    downloadFile: "ggml-small.en.bin",
+  },
+  "medium.en": {
+    id: "medium.en",
+    name: "Whisper medium.en",
+    sizeMb: 1463,
+    downloadUrl: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.en.bin",
+    downloadFile: "ggml-medium.en.bin",
+  },
+  "large-v3": {
+    id: "large-v3",
+    name: "Whisper large-v3",
+    sizeMb: 3100,
+    downloadUrl: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin",
+    downloadFile: "ggml-large-v3.bin",
+  },
 };
 
 const MODEL_PROFILES = {
@@ -114,6 +132,14 @@ const MODEL_PROFILES = {
     memoryGb: 2,
     modelIndex: 13,
     preferredBackend: "prism",
+  },
+  lfm25MoE8bA1b: {
+    id: "LFM2.5-8B-A1B-Q4_K_M.gguf",
+    name: "LFM2.5 8B-A1B MoE Q4_K_M",
+    memoryGb: 6,
+    modelIndex: 15,
+    preferredBackend: "prism",
+    downloadUrl: "https://huggingface.co/LiquidAI/LFM2.5-8B-A1B-GGUF/resolve/main/LFM2.5-8B-A1B-Q4_K_M.gguf",
   },
 };
 
@@ -299,6 +325,7 @@ export class SteveChatApp {
         { id: MODEL_PROFILES.e4b.id, name: MODEL_PROFILES.e4b.name },
         { id: MODEL_PROFILES.e2b.id, name: MODEL_PROFILES.e2b.name },
         { id: MODEL_PROFILES.g4e2bQat.id, name: MODEL_PROFILES.g4e2bQat.name },
+        { id: MODEL_PROFILES.lfm25MoE8bA1b.id, name: MODEL_PROFILES.lfm25MoE8bA1b.name },
       ],
       chats: [
         { id: "steve", title: "Steve", subtitle: "Main thread", archived: false },
@@ -738,9 +765,11 @@ export class SteveChatApp {
     this.els.closeSettingsBtn.addEventListener("click", () => this.toggleSettingsSheet(false));
 
     this.els.saveBaseUrlBtn.addEventListener("click", () => this.saveBaseUrl());
+    this.els.browseModelDirBtn?.addEventListener("click", () => this.browseModelDir());
     this.els.saveModelDirBtn?.addEventListener("click", () => this.saveModelDir());
     this.els.saveEmbeddingConfigBtn?.addEventListener("click", () => this.saveEmbeddingConfig());
     this.els.testEmbeddingBtn?.addEventListener("click", () => this.testEmbeddingEndpoint());
+    this.els.browseSttModelDirBtn?.addEventListener("click", () => this.browseSttModelDir());
     this.els.saveSttConfigBtn?.addEventListener("click", () => this.saveSttConfig());
     this.els.testSttBtn?.addEventListener("click", () => this.checkSttEndpoint());
     this.els.installSttModelBtn?.addEventListener("click", () => this.installSelectedSttModel());
@@ -3282,6 +3311,41 @@ export class SteveChatApp {
     this.schedulePersist();
   }
 
+  async pickDirectory({ title = "Choose folder" } = {}) {
+    const bridge = window.OpenClaw || window.Android || null;
+    if (bridge?.pickDirectory && typeof bridge.pickDirectory === "function") {
+      const picked = await bridge.pickDirectory(title);
+      if (typeof picked === "string") return { path: picked, label: picked, nativePath: true };
+      if (picked && typeof picked === "object") {
+        const path = String(picked.path || picked.uri || picked.name || "").trim();
+        const label = String(picked.label || picked.name || path || "").trim();
+        return { path, label, nativePath: Boolean(picked.path || picked.uri) };
+      }
+    }
+
+    if (window.showDirectoryPicker && typeof window.showDirectoryPicker === "function") {
+      const handle = await window.showDirectoryPicker({ mode: "readwrite" });
+      const label = String(handle?.name || "").trim();
+      return { path: label, label, nativePath: false };
+    }
+
+    throw new Error("Directory picker is not available in this browser.");
+  }
+
+  async browseModelDir() {
+    try {
+      const picked = await this.pickDirectory({ title: "Choose local model directory" });
+      if (!picked.path) return;
+      if (this.els.modelDirInput) this.els.modelDirInput.value = picked.path;
+      this.saveModelDir();
+      if (!picked.nativePath) {
+        this.setRuntimeState("idle", `Selected folder "${picked.label}". This browser only exposes the folder name; use the Android bridge or enter a full path if the runtime needs filesystem access.`);
+      }
+    } catch (err) {
+      this.setRuntimeState("error", `Model directory browse failed: ${String(err?.message || err)}`);
+    }
+  }
+
   getEmbeddingEndpoint() {
     return String(this.state.embeddingBaseUrl || this.state.baseUrl || "").trim().replace(/\/$/, "");
   }
@@ -3406,6 +3470,25 @@ export class SteveChatApp {
     this.schedulePersist();
   }
 
+  async browseSttModelDir() {
+    try {
+      const picked = await this.pickDirectory({ title: "Choose Whisper model directory" });
+      if (!picked.path) return;
+      if (this.els.sttModelDirInput) this.els.sttModelDirInput.value = picked.path;
+      this.saveSttConfig({ announce: false });
+      this.state.sttStatusText = picked.nativePath
+        ? `Whisper model directory saved: ${picked.path}.`
+        : `Selected folder "${picked.label}". Browser download files land there, but local transcription may still need a full Android path.`;
+      this.renderSttStatus();
+      this.setRuntimeState("idle", this.state.sttStatusText);
+      this.schedulePersist();
+    } catch (err) {
+      this.state.sttStatusText = `Whisper directory browse failed: ${String(err?.message || err)}`;
+      this.renderSttStatus();
+      this.setRuntimeState("error", this.state.sttStatusText);
+    }
+  }
+
   async fetchSttJson(path, options = {}) {
     const endpoint = this.getSttEndpoint();
     const res = await fetch(`${endpoint}${path}`, {
@@ -3454,7 +3537,23 @@ export class SteveChatApp {
     this.saveSttConfig({ announce: false });
     const model = this.state.sttModel;
     const selected = STT_MODEL_OPTIONS[model] || STT_MODEL_OPTIONS[STT_RUNTIME_DEFAULTS.model];
-    this.state.sttStatusText = `Downloading ${selected.name} (${this.formatSttModelSize(selected.sizeMb)})...`;
+    if (selected.downloadUrl) {
+      const a = document.createElement("a");
+      a.href = selected.downloadUrl;
+      a.target = "_blank";
+      a.rel = "noopener";
+      a.download = selected.downloadFile || "";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      this.state.sttStatusText = `Opened browser download for ${selected.name} (${this.formatSttModelSize(selected.sizeMb)}). Use Browse after download to select the folder.`;
+      this.renderSttStatus();
+      this.setRuntimeState("idle", this.state.sttStatusText);
+      this.schedulePersist();
+      return;
+    }
+
+    this.state.sttStatusText = `Installing ${selected.name} (${this.formatSttModelSize(selected.sizeMb)}) through the STT sidecar...`;
     this.renderSttStatus();
     this.setRuntimeState("working", this.state.sttStatusText);
 
@@ -3462,7 +3561,7 @@ export class SteveChatApp {
       const data = await this.fetchSttJson("/stt/models/install", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model }),
+        body: JSON.stringify({ model, modelDir: this.state.sttModelDir || "" }),
       });
       const modelDir = String(data?.modelDir || data?.cacheDir || this.state.sttModelDir || "").trim();
       if (modelDir) {
