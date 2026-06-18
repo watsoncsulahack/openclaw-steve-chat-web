@@ -51,13 +51,20 @@ def main():
     ap.add_argument("input")
     ap.add_argument("--threshold-sec", type=int, default=60)
     ap.add_argument("--chunk-sec", type=int, default=45)
-    ap.add_argument("--model", default="base.en")
+    ap.add_argument("--model", default="small.en")
+    ap.add_argument("--model-dir", default="")
     ap.add_argument("--compute-type", default="int8")
     ap.add_argument("--json", action="store_true", dest="as_json")
     args = ap.parse_args()
 
     dur = duration_sec(args.input)
-    model = WhisperModel(args.model, device="cpu", compute_type=args.compute_type)
+    model_kwargs = {
+        "device": "cpu",
+        "compute_type": args.compute_type,
+    }
+    if args.model_dir:
+        model_kwargs["download_root"] = args.model_dir
+    model = WhisperModel(args.model, **model_kwargs)
 
     with tempfile.TemporaryDirectory(prefix="stt_auto_") as td:
         wav = os.path.join(td, "in.wav")
@@ -83,6 +90,8 @@ def main():
     if args.as_json:
         print(json.dumps({
             "mode": mode,
+            "model": args.model,
+            "modelDir": args.model_dir,
             "durationSec": dur,
             "chunks": chunks,
             "text": text,

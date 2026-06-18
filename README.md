@@ -13,6 +13,7 @@ Mobile-first local chat UI prototype inspired by Allan's sketch (hamburger menu,
   - message composer + mock Steve replies + mock mic button
   - assistant metadata includes live `tokens/s` + power telemetry
   - thinking-capable models render inline `<think>...</think>` output in a live toggleable Thinking bubble
+  - local-first speech-to-text settings for Whisper small/medium/large models
   - bottom session token counters (total / prompt / completion)
   - optional live wire-up to local OpenAI-compatible endpoint (`/v1/models`, `/v1/chat/completions`)
   - foldable/wide layout: persistent left chat drawer + right chat pane
@@ -100,6 +101,10 @@ Then in Steve Chat Settings:
 2. choose model profile (Gemma, Ternary Bonsai, or LFM2.5) and tap **Apply model**
 3. tap **Connect local …** to set endpoint + detect models.
 
+Gemma 4 E2B IT QAT is available as profile `g4e2bQat` / model index `14`:
+
+- `g4e2bQat`: `/storage/emulated/0/OpenClawHub/models/gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf`
+
 The Ternary Bonsai profiles are mapped to the PrismML Vulkan runtime:
 
 - `bonsai17b` / model index `9`: `/root/.openclaw/workspace/models/prismml/Ternary-Bonsai-1.7B-Q2_0.gguf`
@@ -112,6 +117,17 @@ The LFM2.5 1.2B profiles are also mapped to the PrismML Vulkan runtime:
 - `lfm25Thinking12b` / model index `13`: `/data/data/com.termux/files/home/models/LFM2.5-1.2B-Thinking-Q4_K_M.gguf`
 
 The LFM2.5 Thinking profile is parsed as a thinking-capable model when the runtime returns OpenAI-style `reasoning_content` / `thinking` fields or inline `<think>...</think>` / `<|START_THINKING|>...<|END_THINKING|>` text.
+
+## Local speech-to-text
+
+`serve.sh` starts the local STT sidecar on `127.0.0.1:18777` when the STT venv exists. In Settings, use **Speech to text** to:
+
+1. choose Whisper `small.en` (~466 MB), `medium.en` (~1.5 GB), or `large-v3` (~3.1 GB),
+2. download/install the selected model,
+3. persist the STT endpoint and model directory,
+4. record from the composer and transcribe the completed recording locally.
+
+The browser app records with `MediaRecorder` and posts the final audio blob to `/stt/transcribe`. Browser `SpeechRecognition` is no longer the primary transcription path.
 
 Build helper for upstream llama.cpp arm64 CPU/Vulkan artifacts: `scripts/phase2b_build_llama_org_arm64.sh`
 

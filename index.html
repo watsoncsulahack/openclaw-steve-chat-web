@@ -162,6 +162,7 @@
               <select id="modelProfileSelect">
                 <option value="e4b">Gemma 3n E4B (UD Q4_K_XL)</option>
                 <option value="e2b">Gemma 3n E2B (UD Q4_K_XL)</option>
+                <option value="g4e2bQat">Gemma 4 E2B IT QAT (UD Q4_K_XL)</option>
                 <option value="g4e2b">Gemma 4 E2B IT (instruct, Q4_K_M)</option>
                 <option value="g4e4b">Gemma 4 E4B IT (instruct, Q4_K_M)</option>
                 <option value="bonsai17b">Ternary Bonsai 1.7B Q2_0</option>
@@ -172,6 +173,26 @@
               </select>
               <button id="applyModelProfileBtn" class="secondary">Apply model</button>
             </div>
+
+            <h4 class="settings-subhead">Speech to text</h4>
+            <label class="field-label" for="sttEndpointInput">STT endpoint</label>
+            <input id="sttEndpointInput" type="text" value="http://127.0.0.1:18777" />
+            <label class="field-label" for="sttModelSelect">Whisper model</label>
+            <div class="drawer-row">
+              <select id="sttModelSelect">
+                <option value="small.en">Whisper small.en (~466 MB)</option>
+                <option value="medium.en">Whisper medium.en (~1.5 GB)</option>
+                <option value="large-v3">Whisper large-v3 (~3.1 GB)</option>
+              </select>
+              <button id="installSttModelBtn" class="secondary">Download</button>
+            </div>
+            <label class="field-label" for="sttModelDirInput">STT model directory</label>
+            <input id="sttModelDirInput" type="text" placeholder="Configured after model download" />
+            <div class="drawer-row">
+              <button id="saveSttConfigBtn" class="secondary">Save STT</button>
+              <button id="testSttBtn" class="secondary">Check STT</button>
+            </div>
+            <p id="sttStatus" class="hint">Speech-to-text: not checked.</p>
 
             <label class="field-label" for="embeddingBaseUrlInput">Embedding endpoint</label>
             <input id="embeddingBaseUrlInput" type="text" value="http://127.0.0.1:18086" />

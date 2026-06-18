@@ -37,6 +37,18 @@ const EMBEDDING_RUNTIME_DEFAULTS = {
   model: "nomic-embed-text-v1.5.Q4_K_M",
 };
 
+const STT_RUNTIME_DEFAULTS = {
+  endpoint: "http://127.0.0.1:18777",
+  model: "small.en",
+  modelDir: "",
+};
+
+const STT_MODEL_OPTIONS = {
+  "small.en": { id: "small.en", name: "Whisper small.en", sizeMb: 466 },
+  "medium.en": { id: "medium.en", name: "Whisper medium.en", sizeMb: 1500 },
+  "large-v3": { id: "large-v3", name: "Whisper large-v3", sizeMb: 3100 },
+};
+
 const MODEL_PROFILES = {
   e2b: {
     id: "gemma-3n-E2B-it-UD-Q4_K_XL.gguf",
@@ -55,6 +67,12 @@ const MODEL_PROFILES = {
     name: "Gemma 4 E2B IT (instruct)",
     memoryGb: 5,
     modelIndex: 5,
+  },
+  g4e2bQat: {
+    id: "gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf",
+    name: "Gemma 4 E2B IT QAT",
+    memoryGb: 5,
+    modelIndex: 14,
   },
   g4e4b: {
     id: "gemma-4-E4B-it-Q4_K_M.gguf",
@@ -188,6 +206,11 @@ export class SteveChatApp {
     const modelDir = localStorage.getItem("steve.modelDir") || "";
     const embeddingBaseUrl = (localStorage.getItem("steve.embeddingBaseUrl") || EMBEDDING_RUNTIME_DEFAULTS.endpoint || baseUrl || "").replace(/\/$/, "");
     const embeddingModel = localStorage.getItem("steve.embeddingModel") || EMBEDDING_RUNTIME_DEFAULTS.model;
+    const sttEndpoint = (localStorage.getItem("steve.sttEndpoint") || STT_RUNTIME_DEFAULTS.endpoint)
+      .replace(/\/stt\/transcribe\/?$/, "")
+      .replace(/\/$/, "");
+    const sttModel = localStorage.getItem("steve.sttModel") || STT_RUNTIME_DEFAULTS.model;
+    const sttModelDir = localStorage.getItem("steve.sttModelDir") || STT_RUNTIME_DEFAULTS.modelDir;
 
     const maxTokensRaw = Number(localStorage.getItem("steve.maxTokens") || 300);
     const temperatureRaw = Number(localStorage.getItem("steve.temperature") || 0.4);
@@ -224,6 +247,10 @@ export class SteveChatApp {
       modelDir,
       embeddingBaseUrl,
       embeddingModel,
+      sttEndpoint,
+      sttModel,
+      sttModelDir,
+      sttStatusText: "Speech-to-text not checked.",
       liveMode: (localStorage.getItem("steve.liveMode") ?? "1") === "1",
       wideDrawerMode,
       theme: localStorage.getItem("steve.theme") || "dark",
@@ -271,6 +298,7 @@ export class SteveChatApp {
       models: [
         { id: MODEL_PROFILES.e4b.id, name: MODEL_PROFILES.e4b.name },
         { id: MODEL_PROFILES.e2b.id, name: MODEL_PROFILES.e2b.name },
+        { id: MODEL_PROFILES.g4e2bQat.id, name: MODEL_PROFILES.g4e2bQat.name },
       ],
       chats: [
         { id: "steve", title: "Steve", subtitle: "Main thread", archived: false },
@@ -315,6 +343,10 @@ export class SteveChatApp {
     if (this.els.modelDirInput) this.els.modelDirInput.value = this.state.modelDir || "";
     if (this.els.embeddingBaseUrlInput) this.els.embeddingBaseUrlInput.value = this.state.embeddingBaseUrl || "";
     if (this.els.embeddingModelInput) this.els.embeddingModelInput.value = this.state.embeddingModel || "";
+    if (this.els.sttEndpointInput) this.els.sttEndpointInput.value = this.state.sttEndpoint || STT_RUNTIME_DEFAULTS.endpoint;
+    if (this.els.sttModelSelect) this.els.sttModelSelect.value = STT_MODEL_OPTIONS[this.state.sttModel] ? this.state.sttModel : STT_RUNTIME_DEFAULTS.model;
+    if (this.els.sttModelDirInput) this.els.sttModelDirInput.value = this.state.sttModelDir || "";
+    this.renderSttStatus();
     this.els.streamModeToggle.checked = Boolean(this.state.streamMode);
     this.els.ttsToggle.checked = Boolean(this.state.ttsEnabled);
     if (this.els.reasoningToggle) this.els.reasoningToggle.checked = Boolean(this.state.reasoningEnabled);
@@ -417,6 +449,10 @@ export class SteveChatApp {
 
     this.state.embeddingBaseUrl = String(this.state.embeddingBaseUrl || EMBEDDING_RUNTIME_DEFAULTS.endpoint || this.state.baseUrl || "").trim().replace(/\/$/, "");
     this.state.embeddingModel = String(this.state.embeddingModel || EMBEDDING_RUNTIME_DEFAULTS.model || "").trim();
+    this.state.sttEndpoint = String(this.state.sttEndpoint || STT_RUNTIME_DEFAULTS.endpoint).trim().replace(/\/stt\/transcribe\/?$/, "").replace(/\/$/, "");
+    this.state.sttModel = STT_MODEL_OPTIONS[this.state.sttModel] ? this.state.sttModel : STT_RUNTIME_DEFAULTS.model;
+    this.state.sttModelDir = String(this.state.sttModelDir || "").trim();
+    this.state.sttStatusText = String(this.state.sttStatusText || "Speech-to-text not checked.");
 
     this.ensureModelProfilesPresent();
 
@@ -705,6 +741,9 @@ export class SteveChatApp {
     this.els.saveModelDirBtn?.addEventListener("click", () => this.saveModelDir());
     this.els.saveEmbeddingConfigBtn?.addEventListener("click", () => this.saveEmbeddingConfig());
     this.els.testEmbeddingBtn?.addEventListener("click", () => this.testEmbeddingEndpoint());
+    this.els.saveSttConfigBtn?.addEventListener("click", () => this.saveSttConfig());
+    this.els.testSttBtn?.addEventListener("click", () => this.checkSttEndpoint());
+    this.els.installSttModelBtn?.addEventListener("click", () => this.installSelectedSttModel());
     this.els.detectModelsBtn.addEventListener("click", () => this.detectModels());
     this.els.connectLocalLlamaBtn.addEventListener("click", () => this.connectLocalLlama());
 
@@ -745,8 +784,8 @@ export class SteveChatApp {
       this.state.reasoningEnabled = Boolean(e.target.checked);
       localStorage.setItem("steve.reasoningEnabled", this.state.reasoningEnabled ? "1" : "0");
       this.setRuntimeState("idle", this.state.reasoningEnabled
-        ? "Thinking enabled (runtime will emit thinking when model supports it)."
-        : "Thinking disabled.");
+        ? "Thinking block controls enabled."
+        : "Thinking stays visible in passive mode.");
       this.schedulePersist();
       this.renderMessages();
     });
@@ -2130,9 +2169,7 @@ export class SteveChatApp {
     const split = this.splitThinkingFromContent(content, reasoning);
     const cleanContentRaw = String(split.content || "").trim();
     const cleanContent = this.sanitizeModelTemplateSlop(cleanContentRaw);
-    const cleanReasoning = this.state.reasoningEnabled
-      ? this.sanitizeModelTemplateSlop(split.thinking)
-      : "";
+    const cleanReasoning = this.sanitizeModelTemplateSlop(split.thinking);
 
     return {
       text: cleanContent || (cleanReasoning ? "" : (cleanContentRaw ? "(template tokens filtered)" : "(empty reply)")),
@@ -2182,12 +2219,14 @@ export class SteveChatApp {
         bubble.appendChild(modelMeta);
       }
 
-      if (msg.role === "steve" && this.state.reasoningEnabled && msg.reasoningText) {
-        const reasoningWrap = document.createElement("details");
-        reasoningWrap.className = "thinking-block";
-        reasoningWrap.open = true;
+      if (msg.role === "steve" && msg.reasoningText) {
+        const controlsEnabled = Boolean(this.state.reasoningEnabled);
+        const reasoningWrap = document.createElement(controlsEnabled ? "details" : "div");
+        reasoningWrap.className = `thinking-block ${controlsEnabled ? "toggleable" : "passive"}`;
+        if (controlsEnabled) reasoningWrap.open = msg.thinkingOpen !== false;
 
-        const summary = document.createElement("summary");
+        const summary = document.createElement(controlsEnabled ? "summary" : "div");
+        summary.className = "thinking-summary";
         const summaryLabel = document.createElement("span");
         summaryLabel.className = "thinking-label";
         const cog = document.createElement("span");
@@ -2207,6 +2246,11 @@ export class SteveChatApp {
         }
 
         reasoningWrap.appendChild(summary);
+        if (controlsEnabled) {
+          reasoningWrap.addEventListener("toggle", () => {
+            msg.thinkingOpen = reasoningWrap.open;
+          });
+        }
 
         const reasoningBody = document.createElement("div");
         reasoningBody.className = "thinking-body msg-body";
@@ -2663,7 +2707,6 @@ export class SteveChatApp {
       this.els.plusBtn.title = "Add";
       this.els.micBtn.title = "Toggle microphone";
       this.els.sendBtn.title = "Send message";
-      this.setAudioStatus("Audio: idle", "");
 
       // Recompute text area height after it becomes visible again.
       requestAnimationFrame(() => {
@@ -2941,10 +2984,13 @@ export class SteveChatApp {
   }
 
   async transcribeRecordedBlob(blob) {
-    const endpoint = String(localStorage.getItem("steve.sttEndpoint") || "http://127.0.0.1:18777/stt/transcribe").trim();
+    const endpoint = `${this.getSttEndpoint()}/stt/transcribe`;
+    const model = STT_MODEL_OPTIONS[this.state.sttModel] ? this.state.sttModel : STT_RUNTIME_DEFAULTS.model;
 
     const form = new FormData();
     form.append("file", blob, "recording.webm");
+    form.append("model", model);
+    if (this.state.sttModelDir) form.append("modelDir", this.state.sttModelDir);
 
     this.sttAbortController = new AbortController();
     const res = await fetch(endpoint, { method: "POST", body: form, signal: this.sttAbortController.signal });
@@ -2962,8 +3008,6 @@ export class SteveChatApp {
   }
 
   async toggleSpeechInput() {
-    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
     // Guard: recording stop/pause/commit are handled by dedicated controls.
     if (this.isRecordingActive() || this.isRecordingPaused()) {
       return;
@@ -3008,8 +3052,7 @@ export class SteveChatApp {
     }
 
     this.mediaRecorder = recorder;
-    const hasRecognition = Boolean(Recognition);
-    this.pendingRecorderOnlyTranscription = !hasRecognition;
+    this.pendingRecorderOnlyTranscription = true;
 
     recorder.ondataavailable = (ev) => {
       if (ev?.data && ev.data.size > 0) this.recordedChunks.push(ev.data);
@@ -3101,76 +3144,8 @@ export class SteveChatApp {
       }
     };
 
-    if (hasRecognition) {
-      const recognizer = new Recognition();
-      recognizer.lang = "en-US";
-      recognizer.continuous = true;
-      recognizer.interimResults = true;
-
-      this.recognition = recognizer;
-
-      recognizer.onresult = (event) => {
-        let finalCombined = "";
-        let interim = "";
-        for (let i = 0; i < event.results.length; i += 1) {
-          const seg = event.results[i][0]?.transcript || "";
-          if (event.results[i].isFinal) finalCombined += `${seg} `;
-          else interim += `${seg} `;
-        }
-        this.speechFinalText = finalCombined.trim();
-        this.speechDraftText = (this.speechFinalText || interim || "").trim();
-
-        const merged = this.appendTranscriptionToBase(this.recordingBaseText, this.speechDraftText);
-        this.els.messageInput.value = merged;
-        this.autoSizeComposerInput();
-      };
-
-      recognizer.onerror = (event) => {
-        const code = String(event.error || "unknown");
-        if (code === "not-allowed" || code === "service-not-allowed") {
-          this.setRuntimeState("error", "Mic permission blocked. Enable microphone for this site/webview and retry.");
-          this.setAudioStatus("Audio: error (permission blocked)", "error");
-        } else if (code === "no-speech") {
-          this.setRuntimeState("error", "No speech detected. Tap mic, speak clearly, tap mic again.");
-          this.setAudioStatus("Audio: no speech detected", "error");
-        } else {
-          this.setRuntimeState("error", `Speech input error: ${code}`);
-          this.setAudioStatus(`Audio: error (${code})`, "error");
-        }
-      };
-
-      recognizer.onend = () => {
-        // If recording is still active/paused (or commit transcribe is active),
-        // keep recorder flow as source of truth and do not collapse recording UI.
-        if (this.audioProcessing || this.pendingRecorderOnlyTranscription || this.isRecordingActive() || this.isRecordingPaused()) {
-          this.recognition = null;
-          return;
-        }
-
-        const finalDraft = (this.els.messageInput.value || this.speechFinalText || "").trim();
-        if (finalDraft) {
-          this.els.messageInput.value = finalDraft;
-          this.autoSizeComposerInput();
-          this.setRuntimeState("idle", "Transcribed. Review/edit text in Chat box, then send.");
-          this.setAudioStatus("Audio: transcription complete", "ready");
-        } else if (this.state.liveMode) {
-          this.setRuntimeState("idle", "Live runtime ready.");
-          this.setAudioStatus("Audio: idle", "");
-        } else {
-          this.setRuntimeState("idle", "UI Demo mode active.");
-          this.setAudioStatus("Audio: idle", "");
-        }
-        this.recognition = null;
-        this.pendingRecorderOnlyTranscription = false;
-        this.setRecordingUi(false);
-        this.els.messageInput.focus();
-      };
-
-      recognizer.start();
-    } else {
-      this.setRuntimeState("working", "Recording audio… tap mic again to stop. (speech engine unavailable; using recorder fallback)");
-      this.setAudioStatus("Audio: recording (recorder fallback)", "recording");
-    }
+    this.setRuntimeState("working", "Recording audio… tap checkmark to transcribe locally.");
+    this.setAudioStatus("Audio: recording", "recording");
 
     this.recordingStartedAt = Date.now();
     this.recordingPausedAt = 0;
@@ -3384,6 +3359,125 @@ export class SteveChatApp {
       this.setRuntimeState("ok", `Embeddings ready on ${endpoint} (${model}).`);
     } catch (err) {
       this.setRuntimeState("error", `Embedding test failed: ${String(err?.message || err)}`);
+    }
+  }
+
+  getSttEndpoint() {
+    return String(this.state.sttEndpoint || STT_RUNTIME_DEFAULTS.endpoint).trim().replace(/\/stt\/transcribe\/?$/, "").replace(/\/$/, "");
+  }
+
+  renderSttStatus(text = null) {
+    const selected = STT_MODEL_OPTIONS[this.state.sttModel] || STT_MODEL_OPTIONS[STT_RUNTIME_DEFAULTS.model];
+    const status = text || this.state.sttStatusText || "Speech-to-text not checked.";
+    const modelLabel = selected ? `${selected.name} (${this.formatSttModelSize(selected.sizeMb)})` : this.state.sttModel;
+    if (this.els.sttStatus) this.els.sttStatus.textContent = `${status} Model: ${modelLabel}.`;
+  }
+
+  formatSttModelSize(sizeMb) {
+    const mb = Number(sizeMb || 0);
+    if (!Number.isFinite(mb) || mb <= 0) return "size unknown";
+    if (mb >= 1024) return `${(mb / 1024).toFixed(mb >= 2048 ? 1 : 2)} GB`;
+    return `${Math.round(mb)} MB`;
+  }
+
+  saveSttConfig({ announce = true } = {}) {
+    const endpoint = String(this.els.sttEndpointInput?.value || this.state.sttEndpoint || STT_RUNTIME_DEFAULTS.endpoint).trim().replace(/\/stt\/transcribe\/?$/, "").replace(/\/$/, "");
+    const model = String(this.els.sttModelSelect?.value || this.state.sttModel || STT_RUNTIME_DEFAULTS.model).trim();
+    const modelDir = String(this.els.sttModelDirInput?.value || this.state.sttModelDir || "").trim();
+
+    this.state.sttEndpoint = endpoint;
+    this.state.sttModel = STT_MODEL_OPTIONS[model] ? model : STT_RUNTIME_DEFAULTS.model;
+    this.state.sttModelDir = modelDir;
+
+    if (this.els.sttEndpointInput) this.els.sttEndpointInput.value = endpoint;
+    if (this.els.sttModelSelect) this.els.sttModelSelect.value = this.state.sttModel;
+    if (this.els.sttModelDirInput) this.els.sttModelDirInput.value = modelDir;
+
+    localStorage.setItem("steve.sttEndpoint", endpoint);
+    localStorage.setItem("steve.sttModel", this.state.sttModel);
+    localStorage.setItem("steve.sttModelDir", modelDir);
+
+    if (announce) {
+      this.state.sttStatusText = "Speech-to-text config saved.";
+      this.setRuntimeState("idle", `STT config saved: ${endpoint} (${this.state.sttModel}).`);
+      this.renderSttStatus();
+    }
+
+    this.schedulePersist();
+  }
+
+  async fetchSttJson(path, options = {}) {
+    const endpoint = this.getSttEndpoint();
+    const res = await fetch(`${endpoint}${path}`, {
+      ...options,
+      headers: {
+        ...(options.headers || {}),
+      },
+    });
+    if (!res.ok) {
+      throw new Error(`STT endpoint http ${res.status}`);
+    }
+    return res.json();
+  }
+
+  async checkSttEndpoint() {
+    this.saveSttConfig({ announce: false });
+    const endpoint = this.getSttEndpoint();
+    this.state.sttStatusText = "Checking speech-to-text...";
+    this.renderSttStatus();
+    this.setRuntimeState("working", `Checking STT endpoint ${endpoint}...`);
+
+    try {
+      const health = await this.fetchSttJson("/health");
+      const configured = health?.configuredModel || health?.model || this.state.sttModel;
+      const modelDir = String(health?.modelDir || health?.cacheDir || this.state.sttModelDir || "").trim();
+      if (configured && STT_MODEL_OPTIONS[configured]) this.state.sttModel = configured;
+      if (modelDir) this.state.sttModelDir = modelDir;
+      if (this.els.sttModelSelect) this.els.sttModelSelect.value = this.state.sttModel;
+      if (this.els.sttModelDirInput) this.els.sttModelDirInput.value = this.state.sttModelDir;
+      localStorage.setItem("steve.sttModel", this.state.sttModel);
+      localStorage.setItem("steve.sttModelDir", this.state.sttModelDir);
+      this.state.sttStatusText = health?.modelReady === false
+        ? "Speech-to-text endpoint is reachable; selected model still needs download."
+        : "Speech-to-text endpoint is ready.";
+      this.renderSttStatus();
+      this.setRuntimeState("ok", this.state.sttStatusText);
+      this.schedulePersist();
+    } catch (err) {
+      this.state.sttStatusText = `Speech-to-text check failed: ${String(err?.message || err)}`;
+      this.renderSttStatus();
+      this.setRuntimeState("error", this.state.sttStatusText);
+    }
+  }
+
+  async installSelectedSttModel() {
+    this.saveSttConfig({ announce: false });
+    const model = this.state.sttModel;
+    const selected = STT_MODEL_OPTIONS[model] || STT_MODEL_OPTIONS[STT_RUNTIME_DEFAULTS.model];
+    this.state.sttStatusText = `Downloading ${selected.name} (${this.formatSttModelSize(selected.sizeMb)})...`;
+    this.renderSttStatus();
+    this.setRuntimeState("working", this.state.sttStatusText);
+
+    try {
+      const data = await this.fetchSttJson("/stt/models/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model }),
+      });
+      const modelDir = String(data?.modelDir || data?.cacheDir || this.state.sttModelDir || "").trim();
+      if (modelDir) {
+        this.state.sttModelDir = modelDir;
+        if (this.els.sttModelDirInput) this.els.sttModelDirInput.value = modelDir;
+        localStorage.setItem("steve.sttModelDir", modelDir);
+      }
+      this.state.sttStatusText = `${selected.name} is installed.`;
+      this.renderSttStatus();
+      this.setRuntimeState("ok", `STT model ready: ${selected.name}.`);
+      this.schedulePersist();
+    } catch (err) {
+      this.state.sttStatusText = `STT model download failed: ${String(err?.message || err)}`;
+      this.renderSttStatus();
+      this.setRuntimeState("error", this.state.sttStatusText);
     }
   }
 
@@ -4217,7 +4311,7 @@ export class SteveChatApp {
           repeatPenalty: this.state.generation.repeatPenalty,
           customJson: this.state.generation.customRuntimeJson,
           signal,
-          reasoningEnabled: this.state.reasoningEnabled,
+          reasoningEnabled: true,
           onToken: (chunk) => {
             const contentChunk = typeof chunk === "string"
               ? chunk
@@ -4230,9 +4324,7 @@ export class SteveChatApp {
             if (reasoningChunk) streamedReasoning += reasoningChunk;
 
             chunkCount += 1;
-            const combinedOutput = this.state.reasoningEnabled
-              ? `${streamedReasoning}\n${streamedText}`.trim()
-              : streamedText;
+            const combinedOutput = `${streamedReasoning}\n${streamedText}`.trim();
             completionPreviewTokens = Math.max(1, this.estimateTokenCount(combinedOutput));
             const elapsedSec = Math.max(0.2, (performance.now() - startedAt) / 1000);
             liveTps = completionPreviewTokens / elapsedSec;
@@ -4289,7 +4381,7 @@ export class SteveChatApp {
             typicalP: this.state.generation.typicalP,
             repeatPenalty: this.state.generation.repeatPenalty,
             customJson: this.state.generation.customRuntimeJson,
-            reasoningEnabled: this.state.reasoningEnabled,
+            reasoningEnabled: true,
             signal,
           }), {
             signal,
@@ -4340,7 +4432,7 @@ export class SteveChatApp {
               typicalP: this.state.generation.typicalP,
               repeatPenalty: this.state.generation.repeatPenalty,
               customJson: this.state.generation.customRuntimeJson,
-              reasoningEnabled: this.state.reasoningEnabled,
+              reasoningEnabled: true,
               signal,
             }), {
               signal,
@@ -4423,7 +4515,7 @@ export class SteveChatApp {
         typicalP: this.state.generation.typicalP,
         repeatPenalty: this.state.generation.repeatPenalty,
         customJson: this.state.generation.customRuntimeJson,
-        reasoningEnabled: this.state.reasoningEnabled,
+        reasoningEnabled: true,
         signal,
       }), {
         signal,
@@ -4456,7 +4548,7 @@ export class SteveChatApp {
             typicalP: this.state.generation.typicalP,
             repeatPenalty: this.state.generation.repeatPenalty,
             customJson: this.state.generation.customRuntimeJson,
-            reasoningEnabled: this.state.reasoningEnabled,
+            reasoningEnabled: true,
             signal,
           }), {
             signal,

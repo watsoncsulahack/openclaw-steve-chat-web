@@ -48,6 +48,7 @@ fi
 GEMMA_E2B_PATH="${GEMMA_E2B_PATH:-/storage/emulated/0/OpenClawHub/models/gemma-3n-E2B-it-UD-Q4_K_XL.gguf}"
 GEMMA_E4B_PATH="${GEMMA_E4B_PATH:-/storage/emulated/0/OpenClawHub/models/gemma-3n-E4B-it-UD-Q4_K_XL.gguf}"
 GEMMA4_E2B_PATH="${GEMMA4_E2B_PATH:-/storage/emulated/0/OpenClawHub/models/gemma-4-E2B-it-Q4_K_M.gguf}"
+GEMMA4_E2B_QAT_PATH="${GEMMA4_E2B_QAT_PATH:-/storage/emulated/0/OpenClawHub/models/gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf}"
 GEMMA4_E4B_PATH="${GEMMA4_E4B_PATH:-/storage/emulated/0/OpenClawHub/models/gemma-4-E4B-it-Q4_K_M.gguf}"
 BONSAI_17B_PATH="${BONSAI_17B_PATH:-/root/.openclaw/workspace/models/prismml/Ternary-Bonsai-1.7B-Q2_0.gguf}"
 BONSAI_4B_PATH="${BONSAI_4B_PATH:-/root/.openclaw/workspace/models/prismml/Ternary-Bonsai-4B-Q2_0.gguf}"
@@ -74,6 +75,9 @@ resolve_model_path() {
       ;;
     5|7)
       echo "$GEMMA4_E2B_PATH"
+      ;;
+    14)
+      echo "$GEMMA4_E2B_QAT_PATH"
       ;;
     6|8)
       echo "$GEMMA4_E4B_PATH"
@@ -104,7 +108,7 @@ resolve_model_runtime_defaults() {
   local idx="$1"
   case "$idx" in
     # Gemma 4 E2B IT (Q4_K_M): 128k native context in metadata, tuned lower for device stability.
-    5|7)
+    5|7|14)
       echo "ctx=8192 ngl=99 threads=4"
       ;;
     # Gemma 4 E4B IT (Q4_K_M): larger footprint than E2B; lower default ctx/ngl for mobile headroom.

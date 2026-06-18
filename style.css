@@ -328,15 +328,30 @@ body.theme-light {
   background: rgba(12, 22, 52, 0.38);
 }
 
-.thinking-block > summary {
+.thinking-block.passive {
+  border-color: rgba(132, 159, 238, 0.26);
+  background: rgba(12, 22, 52, 0.18);
+  opacity: 0.72;
+}
+
+.thinking-block > summary,
+.thinking-summary {
   display: flex;
   align-items: center;
   gap: 8px;
-  cursor: pointer;
   font-size: 12px;
   color: #bfd2ff;
   font-weight: 600;
   user-select: none;
+}
+
+.thinking-block.toggleable > summary {
+  cursor: pointer;
+}
+
+.thinking-block.passive .thinking-summary {
+  cursor: default;
+  color: rgba(191, 210, 255, 0.72);
 }
 
 .thinking-label {
@@ -1021,8 +1036,18 @@ body.theme-light .thinking-block {
   border-color: rgba(95, 126, 210, 0.75);
 }
 
-body.theme-light .thinking-block > summary {
+body.theme-light .thinking-block.passive {
+  background: rgba(214, 228, 255, 0.42);
+  border-color: rgba(95, 126, 210, 0.32);
+}
+
+body.theme-light .thinking-block > summary,
+body.theme-light .thinking-summary {
   color: #2f4f9a;
+}
+
+body.theme-light .thinking-block.passive .thinking-summary {
+  color: rgba(47, 79, 154, 0.68);
 }
 
 body.theme-light .thinking-tps {
